@@ -13,13 +13,16 @@ import (
 )
 
 const (
-	// use deepseek api
-	url   = "https://api.deepseek.com/v1/chat/completions"
-	model = "deepseek-chat"
+	// use ollama api, reference: https://docs.ollama.com/api/openai-compatibility
+	url   = "http://localhost:11434/v1/chat/completions"
+	model = "gpt-oss:latest"
 
-	colorGreen = "\033[32m"
-	colorCyan  = "\033[36m"
-	colorReset = "\033[0m"
+	colorGreen   = "\033[32m"
+	colorYellow  = "\033[33m"
+	colorBlue    = "\033[34m"
+	colorMagenta = "\033[35m"
+	colorCyan    = "\033[36m"
+	colorReset   = "\033[0m"
 )
 
 func main() {
@@ -50,6 +53,9 @@ func main() {
 			"model":    model,
 			"messages": history,
 			"stream":   true,
+			"stream_options": map[string]any{
+				"include_usage": true,
+			},
 		}
 
 		ctx := context.Background()
@@ -59,31 +65,44 @@ func main() {
 			continue
 		}
 
-		fmt.Printf("%sAgent>%s ", colorCyan, colorReset)
+		fmt.Printf("\n%sAgent>%s ", colorCyan, colorReset)
 
 		var chunks []string
+		var tokenUsage []Usage
 
 		for msg := range ch {
-			if len(msg.Choices) == 0 {
-				continue
+			if len(msg.Choices) > 0 {
+				switch {
+				case msg.Choices[0].Delta.Content != "":
+					content := msg.Choices[0].Delta.Content
+					fmt.Print(content)
+					chunks = append(chunks, content)
+				case msg.Choices[0].Delta.FinishReason != "":
+					fmt.Printf("\u001b[91m%s\u001b[0m", msg.Choices[0].Delta.FinishReason)
+				}
 			}
 
-			switch {
-			case msg.Choices[0].Delta.Content != "":
-				content := msg.Choices[0].Delta.Content
-				fmt.Print(content)
-				chunks = append(chunks, content)
-			case msg.Choices[0].Delta.FinishReason != "":
-				fmt.Printf("\u001b[91m%s\u001b[0m", msg.Choices[0].Delta.FinishReason)
-			}
+			tokenUsage = append(tokenUsage, msg.Usage)
 		}
 
 		if len(chunks) > 0 {
-			fmt.Print("\n")
+			fmt.Print("\n\n")
 			history = append(history, map[string]any{
 				"role":    "assistant",
 				"content": strings.Join(chunks, " "),
 			})
+		}
+
+		if len(tokenUsage) > 0 {
+			cToken, pToken := 0, 0
+			for _, usage := range tokenUsage {
+				cToken += int(usage.CompletionToken)
+				pToken += int(usage.PromptToken)
+			}
+			fmt.Printf("%sCompletion_Tokens: %d%s\n%sPrompt_Tokens: %d%s\n%sTotal_Tokens: %d%s\n\n",
+				colorYellow, cToken, colorReset,
+				colorMagenta, pToken, colorReset,
+				colorBlue, tokenUsage[len(tokenUsage)-1].TotalToken, colorReset)
 		}
 	}
 }
@@ -133,10 +152,6 @@ type Client struct {
 }
 
 func (c *Client) CallLLMStream(ctx context.Context, req map[string]any) (SSEResp, error) {
-	if c.apiKey == "" {
-		return nil, errors.New("empty api key")
-	}
-
 	var (
 		b   bytes.Buffer
 		err error
