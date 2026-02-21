@@ -22,7 +22,11 @@ const (
 	colorBlue    = "\033[34m"
 	colorMagenta = "\033[35m"
 	colorCyan    = "\033[36m"
+	colorRed     = "\033[91m"
+	colorGray    = "\033[90m"
 	colorReset   = "\033[0m"
+
+	separator = "────────────────────────────────"
 )
 
 func main() {
@@ -61,24 +65,40 @@ func main() {
 		ctx := context.Background()
 		ch, err := cli.CallLLMStream(ctx, req)
 		if err != nil {
-			fmt.Printf("\u001b[91m%s\u001b[0m\n", err.Error())
+			fmt.Printf("%s%s%s\n", colorRed, err.Error(), colorReset)
 			continue
 		}
 
 		fmt.Printf("\n%sAgent>%s ", colorCyan, colorReset)
 
-		var chunks []string
-		var tokenUsage []Usage
+		var (
+			chunks     []string
+			tokenUsage []Usage
+
+			reasoning bool
+		)
 
 		for msg := range ch {
 			if len(msg.Choices) > 0 {
 				switch {
 				case msg.Choices[0].Delta.Content != "":
+					if reasoning {
+						fmt.Printf("\n\n%s%s Answer %s%s\n", colorCyan, separator, separator, colorReset)
+						reasoning = false
+					}
+
 					content := msg.Choices[0].Delta.Content
 					fmt.Print(content)
 					chunks = append(chunks, content)
+				case msg.Choices[0].Delta.Reasoning != "":
+					if !reasoning {
+						fmt.Printf("\n%s%s Reasoning %s%s\n", colorMagenta, separator, separator, colorReset)
+						reasoning = true
+					}
+
+					fmt.Printf("%s%s%s", colorGray, msg.Choices[0].Delta.Reasoning, colorReset)
 				case msg.Choices[0].Delta.FinishReason != "":
-					fmt.Printf("\u001b[91m%s\u001b[0m", msg.Choices[0].Delta.FinishReason)
+					fmt.Printf("%s%s%s", colorRed, msg.Choices[0].Delta.FinishReason, colorReset)
 				}
 			}
 
@@ -99,6 +119,8 @@ func main() {
 				cToken += int(usage.CompletionToken)
 				pToken += int(usage.PromptToken)
 			}
+			fmt.Printf("%s%s Usage %s%s\n",
+				colorGray, separator, separator, colorReset)
 			fmt.Printf("%sCompletion_Tokens: %d%s\n%sPrompt_Tokens: %d%s\n%sTotal_Tokens: %d%s\n\n",
 				colorYellow, cToken, colorReset,
 				colorMagenta, pToken, colorReset,
@@ -136,6 +158,7 @@ type Delta struct {
 	Content      string `json:"content"`
 	Role         string `json:"role"`
 	FinishReason string `json:"finish_reason"`
+	Reasoning    string `json:"reasoning"`
 }
 
 type Usage struct {
