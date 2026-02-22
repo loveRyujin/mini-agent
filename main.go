@@ -60,6 +60,30 @@ func main() {
 			"stream_options": map[string]any{
 				"include_usage": true,
 			},
+			"tools": []map[string]any{
+				{
+					"type": "function",
+					"function": map[string]any{
+						"name":        "get_current_weather",
+						"description": "Get the current weather in a given location",
+						"parameters": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"location": map[string]any{
+									"type":        "string",
+									"description": "The city and state, e.g. San Francisco, CA",
+								},
+								"unit": map[string]any{
+									"type": "string",
+									"enum": []string{"celsius", "fahrenheit"},
+								},
+							},
+						},
+						"required": []string{"location"},
+					},
+				},
+			},
+			"tool_choice": "auto",
 		}
 
 		ctx := context.Background()
@@ -75,12 +99,48 @@ func main() {
 			chunks     []string
 			tokenUsage []Usage
 
-			reasoning bool
+			reasoning  bool
+			isToolCall bool
 		)
 
 		for msg := range ch {
 			if len(msg.Choices) > 0 {
 				switch {
+				case len(msg.Choices[0].Delta.ToolCalls) > 0:
+					toolCall := msg.Choices[0].Delta.ToolCalls[0]
+					if !isToolCall {
+						isToolCall = true
+						fmt.Printf("\n\nTool Call:\n\nToolID[%s]: %s(%s)\n\n",
+							toolCall.ID,
+							toolCall.Function.Name,
+							toolCall.Function.Arguments,
+						)
+					}
+
+					argsJson, err := json.Marshal(toolCall.Function.Arguments)
+					if err != nil {
+						fmt.Printf("%s%v%s\n", colorRed, err, colorReset)
+					}
+					history = append(history, map[string]any{
+						"role": "assistant",
+						"tool_calls": []map[string]any{
+							{
+								"id":   toolCall.ID,
+								"type": "function",
+								"function": map[string]any{
+									"name":      toolCall.Function.Name,
+									"arguments": string(argsJson),
+								},
+							},
+						},
+					})
+
+					resp, err := getCurrentWeather(ctx, toolCall)
+					if err != nil {
+						fmt.Printf("%s%s%s\n", colorRed, err, colorReset)
+					}
+					history = append(history, resp)
+					fmt.Printf("Tool Call Resp: %s\n\n", resp)
 				case msg.Choices[0].Delta.Content != "":
 					if reasoning {
 						fmt.Printf("\n\n%s%s Answer %s%s\n", colorCyan, separator, separator, colorReset)
@@ -155,10 +215,45 @@ type Choice struct {
 }
 
 type Delta struct {
-	Content      string `json:"content"`
-	Role         string `json:"role"`
-	FinishReason string `json:"finish_reason"`
-	Reasoning    string `json:"reasoning"`
+	Content      string     `json:"content"`
+	Role         string     `json:"role"`
+	FinishReason string     `json:"finish_reason"`
+	Reasoning    string     `json:"reasoning"`
+	ToolCalls    []ToolCall `json:"tool_calls"`
+}
+
+type ToolCall struct {
+	Index    int64    `json:"index"`
+	ID       string   `json:"id"`
+	Type     string   `json:"type"`
+	Function Function `json:"function"`
+}
+
+type Function struct {
+	Name      string         `json:"name"`
+	Arguments map[string]any `json:"arguments"`
+}
+
+func (f *Function) UnmarshalJSON(data []byte) error {
+	var tmpF struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	}
+
+	if err := json.Unmarshal(data, &tmpF); err != nil {
+		return err
+	}
+
+	args := make(map[string]any)
+	if err := json.Unmarshal([]byte(tmpF.Arguments), &args); err != nil {
+		return err
+	}
+
+	*f = Function{
+		Name:      tmpF.Name,
+		Arguments: args,
+	}
+	return nil
 }
 
 type Usage struct {
@@ -190,7 +285,8 @@ func (c *Client) CallLLMStream(ctx context.Context, req map[string]any) (SSEResp
 		return nil, err
 	}
 	r.Header.Set("Content-Type", "application/json")
-	r.Header.Set("Accept", "application/json")
+	r.Header.Set("Accept", "text/event-stream")
+	r.Header.Set("Cache-Control", "no-cache")
 	if c.apiKey != "" {
 		r.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
 	}
@@ -221,6 +317,7 @@ func (c *Client) CallLLMStream(ctx context.Context, req map[string]any) (SSEResp
 			}
 
 			var v Response
+			// remove prefix: [data: ]
 			if err := json.Unmarshal([]byte(line[6:]), &v); err != nil {
 				fmt.Println(err)
 				return
@@ -231,4 +328,37 @@ func (c *Client) CallLLMStream(ctx context.Context, req map[string]any) (SSEResp
 	}(ctx)
 
 	return ch, nil
+}
+
+func getCurrentWeather(_ context.Context, args ToolCall) (map[string]any, error) {
+	location, ok := args.Function.Arguments["location"].(string)
+	if !ok {
+		return nil, errors.New("unsupport argument type")
+	}
+
+	resp := struct {
+		Status string
+		Data   map[string]any
+	}{
+		Status: "Succeed",
+		Data: map[string]any{
+			"temperature": 30,
+			"description": fmt.Sprintf("The temperature in %s is 30", location),
+		},
+	}
+
+	d, err := json.Marshal(&resp)
+	if err != nil {
+		return map[string]any{
+			"role":         "tool",
+			"tool_call_id": args.ID,
+			"content":      fmt.Sprintf(`{"status": "FAILED", "data": "%s"}`, err),
+		}, nil
+	}
+
+	return map[string]any{
+		"role":         "tool",
+		"tool_call_id": args.ID,
+		"content":      string(d),
+	}, nil
 }
