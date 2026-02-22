@@ -87,92 +87,109 @@ func main() {
 		}
 
 		ctx := context.Background()
-		ch, err := cli.CallLLMStream(ctx, req)
-		if err != nil {
-			fmt.Printf("%s%s%s\n", colorRed, err.Error(), colorReset)
-			continue
-		}
-
 		fmt.Printf("\n%sAgent>%s ", colorCyan, colorReset)
 
 		var (
 			chunks     []string
 			tokenUsage []Usage
-
 			reasoning  bool
-			isToolCall bool
+			answered   bool
 		)
 
-		for msg := range ch {
-			if len(msg.Choices) > 0 {
-				switch {
-				case len(msg.Choices[0].Delta.ToolCalls) > 0:
-					toolCall := msg.Choices[0].Delta.ToolCalls[0]
-					if !isToolCall {
-						isToolCall = true
-						fmt.Printf("\n\nTool Call:\n\nToolID[%s]: %s(%s)\n\n",
-							toolCall.ID,
-							toolCall.Function.Name,
-							toolCall.Function.Arguments,
-						)
-					}
+		for {
+			req["messages"] = history
 
-					argsJson, err := json.Marshal(toolCall.Function.Arguments)
-					if err != nil {
-						fmt.Printf("%s%v%s\n", colorRed, err, colorReset)
-					}
-					history = append(history, map[string]any{
-						"role": "assistant",
-						"tool_calls": []map[string]any{
-							{
-								"id":   toolCall.ID,
-								"type": "function",
-								"function": map[string]any{
-									"name":      toolCall.Function.Name,
-									"arguments": string(argsJson),
-								},
-							},
-						},
-					})
-
-					resp, err := getCurrentWeather(ctx, toolCall)
-					if err != nil {
-						fmt.Printf("%s%s%s\n", colorRed, err, colorReset)
-					}
-					history = append(history, resp)
-					fmt.Printf("Tool Call Resp: %s\n\n", resp)
-				case msg.Choices[0].Delta.Content != "":
-					if reasoning {
-						fmt.Printf("\n\n%s%s Answer %s%s\n", colorCyan, separator, separator, colorReset)
-						reasoning = false
-					}
-
-					content := msg.Choices[0].Delta.Content
-					fmt.Print(content)
-					chunks = append(chunks, content)
-				case msg.Choices[0].Delta.Reasoning != "":
-					if !reasoning {
-						fmt.Printf("\n%s%s Reasoning %s%s\n", colorMagenta, separator, separator, colorReset)
-						reasoning = true
-					}
-
-					fmt.Printf("%s%s%s", colorGray, msg.Choices[0].Delta.Reasoning, colorReset)
-				case msg.Choices[0].Delta.FinishReason != "":
-					fmt.Printf("%s%s%s", colorRed, msg.Choices[0].Delta.FinishReason, colorReset)
-				}
+			ch, err := cli.CallLLMStream(ctx, req)
+			if err != nil {
+				fmt.Printf("%s%s%s\n", colorRed, err.Error(), colorReset)
+				break
 			}
 
-			tokenUsage = append(tokenUsage, msg.Usage)
+			var isToolCall bool
+
+			for msg := range ch {
+				if len(msg.Choices) > 0 {
+					switch {
+					case msg.Choices[0].Delta.Reasoning != "":
+						if !reasoning {
+							fmt.Printf("\n%s%s Reasoning %s%s\n", colorMagenta, separator, separator, colorReset)
+							reasoning = true
+						}
+						fmt.Printf("%s%s%s", colorGray, msg.Choices[0].Delta.Reasoning, colorReset)
+
+					case len(msg.Choices[0].Delta.ToolCalls) > 0:
+						if !reasoning {
+							fmt.Printf("\n%s%s Reasoning %s%s\n", colorMagenta, separator, separator, colorReset)
+							reasoning = true
+						}
+
+						toolCall := msg.Choices[0].Delta.ToolCalls[0]
+						isToolCall = true
+
+						fmt.Printf("\n%s[Tool Call]%s %s%s%s(%s%s%s)\n",
+							colorYellow, colorReset,
+							colorCyan, toolCall.Function.Name, colorReset,
+							colorGray, toolCall.Function.Arguments, colorReset,
+						)
+
+						argsJson, err := json.Marshal(toolCall.Function.Arguments)
+						if err != nil {
+							fmt.Printf("%s%v%s\n", colorRed, err, colorReset)
+						}
+						history = append(history, map[string]any{
+							"role": "assistant",
+							"tool_calls": []map[string]any{
+								{
+									"id":   toolCall.ID,
+									"type": "function",
+									"function": map[string]any{
+										"name":      toolCall.Function.Name,
+										"arguments": string(argsJson),
+									},
+								},
+							},
+						})
+
+						resp, err := getCurrentWeather(ctx, toolCall)
+						if err != nil {
+							fmt.Printf("%s%v%s\n", colorRed, err, colorReset)
+						}
+						history = append(history, resp)
+						fmt.Printf("%s[Tool Result]%s %s%v%s\n",
+							colorYellow, colorReset,
+							colorGray, resp["content"], colorReset,
+						)
+
+					case msg.Choices[0].Delta.Content != "":
+						if !answered {
+							fmt.Printf("\n\n%s%s Answer %s%s\n", colorCyan, separator, separator, colorReset)
+							answered = true
+						}
+						content := msg.Choices[0].Delta.Content
+						fmt.Print(content)
+						chunks = append(chunks, content)
+
+					case msg.Choices[0].Delta.FinishReason != "":
+					}
+				}
+
+				tokenUsage = append(tokenUsage, msg.Usage)
+			}
+
+			if !isToolCall {
+				break
+			}
 		}
 
 		if len(chunks) > 0 {
-			fmt.Print("\n\n")
+			fmt.Print("\n")
 			history = append(history, map[string]any{
 				"role":    "assistant",
 				"content": strings.Join(chunks, " "),
 			})
 		}
 
+		fmt.Println()
 		if len(tokenUsage) > 0 {
 			cToken, pToken := 0, 0
 			for _, usage := range tokenUsage {
