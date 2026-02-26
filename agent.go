@@ -28,17 +28,22 @@ const (
 type Agent struct {
 	ApiKey string
 	Cli    *Client
+	Tools  map[string]Tool
 }
 
 func NewAgent(apiKey, url, model string) *Agent {
-	return &Agent{
+	agent := &Agent{
 		ApiKey: apiKey,
 		Cli: &Client{
 			cli:   http.DefaultClient,
 			url:   url,
 			model: model,
 		},
+		Tools: make(map[string]Tool),
 	}
+	agent.RegisterTool(&getCurrentWeather{}, &readFile{})
+
+	return agent
 }
 
 func (a *Agent) Run() error {
@@ -68,29 +73,7 @@ func (a *Agent) Run() error {
 			"stream_options": map[string]any{
 				"include_usage": true,
 			},
-			"tools": []map[string]any{
-				{
-					"type": "function",
-					"function": map[string]any{
-						"name":        "get_current_weather",
-						"description": "Get the current weather in a given location",
-						"parameters": map[string]any{
-							"type": "object",
-							"properties": map[string]any{
-								"location": map[string]any{
-									"type":        "string",
-									"description": "The city and state, e.g. San Francisco, CA",
-								},
-								"unit": map[string]any{
-									"type": "string",
-									"enum": []string{"celsius", "fahrenheit"},
-								},
-							},
-						},
-						"required": []string{"location"},
-					},
-				},
-			},
+			"tools":       a.ToolDefinitions(),
 			"tool_choice": "auto",
 		}
 
@@ -110,7 +93,7 @@ func (a *Agent) Run() error {
 			ch, err := a.Cli.CallLLMStream(ctx, req)
 			if err != nil {
 				fmt.Printf("%s%s%s\n", colorRed, err.Error(), colorReset)
-				break
+				return err
 			}
 
 			var isToolCall bool
@@ -131,43 +114,15 @@ func (a *Agent) Run() error {
 							reasoning = true
 						}
 
-						toolCall := msg.Choices[0].Delta.ToolCalls[0]
+						toolCalls := msg.Choices[0].Delta.ToolCalls
 						isToolCall = true
 
-						fmt.Printf("\n%s[Tool Call]%s %s%s%s(%s%s%s)\n",
-							colorYellow, colorReset,
-							colorCyan, toolCall.Function.Name, colorReset,
-							colorGray, toolCall.Function.Arguments, colorReset,
-						)
-
-						argsJson, err := json.Marshal(toolCall.Function.Arguments)
+						resp, err := a.toolCall(ctx, toolCalls)
 						if err != nil {
-							fmt.Printf("%s%v%s\n", colorRed, err, colorReset)
+							fmt.Printf("%s%s%s\n", colorRed, err.Error(), colorReset)
+							return err
 						}
-						history = append(history, map[string]any{
-							"role": "assistant",
-							"tool_calls": []map[string]any{
-								{
-									"id":   toolCall.ID,
-									"type": "function",
-									"function": map[string]any{
-										"name":      toolCall.Function.Name,
-										"arguments": string(argsJson),
-									},
-								},
-							},
-						})
-
-						resp, err := getCurrentWeather(ctx, toolCall)
-						if err != nil {
-							fmt.Printf("%s%v%s\n", colorRed, err, colorReset)
-						}
-						history = append(history, resp)
-						fmt.Printf("%s[Tool Result]%s %s%v%s\n",
-							colorYellow, colorReset,
-							colorGray, resp["content"], colorReset,
-						)
-
+						history = append(history, resp...)
 					case msg.Choices[0].Delta.Content != "":
 						if !answered {
 							fmt.Printf("\n\n%s%s Answer %s%s\n", colorCyan, separator, separator, colorReset)
@@ -212,6 +167,50 @@ func (a *Agent) Run() error {
 				colorBlue, tokenUsage[len(tokenUsage)-1].TotalToken, colorReset)
 		}
 	}
+}
+
+func (a *Agent) RegisterTool(tools ...Tool) {
+	for _, tool := range tools {
+		a.Tools[tool.Name()] = tool
+	}
+}
+
+func (a *Agent) ToolDefinitions() []map[string]any {
+	defs := make([]map[string]any, 0, len(a.Tools))
+	for _, tool := range a.Tools {
+		defs = append(defs, tool.Definition())
+	}
+	return defs
+}
+
+func (a *Agent) toolCall(ctx context.Context, toolCalls []ToolCall) ([]map[string]any, error) {
+	results := make([]map[string]any, 0, len(toolCalls))
+
+	for _, toolCall := range toolCalls {
+		fmt.Printf("\n%s[Tool Call]%s %s%s%s(%s%s%s)\n",
+			colorYellow, colorReset,
+			colorCyan, toolCall.Function.Name, colorReset,
+			colorGray, toolCall.Function.Arguments, colorReset,
+		)
+
+		tool, exist := a.Tools[toolCall.Function.Name]
+		if !exist {
+			continue
+		}
+
+		resp, err := tool.Call(ctx, toolCall)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Printf("%s[Tool Result]%s %s%v%s\n",
+			colorYellow, colorReset,
+			colorGray, resp["content"], colorReset,
+		)
+
+		results = append(results, resp)
+	}
+
+	return results, nil
 }
 
 func getUserInput(r *bufio.Scanner) (string, bool) {
@@ -355,37 +354,4 @@ func (c *Client) CallLLMStream(ctx context.Context, req map[string]any) (SSEResp
 	}(ctx)
 
 	return ch, nil
-}
-
-func getCurrentWeather(_ context.Context, args ToolCall) (map[string]any, error) {
-	location, ok := args.Function.Arguments["location"].(string)
-	if !ok {
-		return nil, errors.New("unsupport argument type")
-	}
-
-	resp := struct {
-		Status string
-		Data   map[string]any
-	}{
-		Status: "Succeed",
-		Data: map[string]any{
-			"temperature": 30,
-			"description": fmt.Sprintf("The temperature in %s is 30", location),
-		},
-	}
-
-	d, err := json.Marshal(&resp)
-	if err != nil {
-		return map[string]any{
-			"role":         "tool",
-			"tool_call_id": args.ID,
-			"content":      fmt.Sprintf(`{"status": "FAILED", "data": "%s"}`, err),
-		}, nil
-	}
-
-	return map[string]any{
-		"role":         "tool",
-		"tool_call_id": args.ID,
-		"content":      string(d),
-	}, nil
 }
