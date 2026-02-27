@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 )
@@ -19,15 +20,9 @@ func main() {
 }
 
 func run() error {
-	apiKey := os.Getenv("LLM_API_KEY")
-	url := os.Getenv("LLM_API_URL")
-	if url == "" {
-		url = defaultUrl
-	}
-	model := os.Getenv("LLM_MODEL")
-	if model == "" {
-		model = defaultModel
-	}
+	apiKey := cmp.Or(os.Getenv("LLM_API_KEY"), defaultUrl)
+	url := cmp.Or(os.Getenv("LLM_API_URL"), defaultUrl)
+	model := cmp.Or(os.Getenv("LLM_MODEL"), defaultModel)
 
 	agent := NewAgent(apiKey, url, model)
 	if err := agent.Run(); err != nil {
