@@ -41,7 +41,7 @@ func NewAgent(apiKey, url, model string) *Agent {
 		},
 		Tools: make(map[string]Tool),
 	}
-	agent.RegisterTool(&getCurrentWeather{}, &readFile{})
+	agent.RegisterTool(&getCurrentWeather{}, &readFile{}, &listFile{})
 
 	return agent
 }
@@ -198,10 +198,8 @@ func (a *Agent) toolCall(ctx context.Context, toolCalls []ToolCall) ([]map[strin
 			continue
 		}
 
-		resp, err := tool.Call(ctx, toolCall)
-		if err != nil {
-			return nil, err
-		}
+		resp := tool.Call(ctx, toolCall)
+
 		fmt.Printf("%s[Tool Result]%s %s%v%s\n",
 			colorYellow, colorReset,
 			colorGray, resp["content"], colorReset,
