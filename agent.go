@@ -1,10 +1,7 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"fmt"
-	"os"
 	"strings"
 )
 
@@ -41,23 +38,6 @@ func (a *Agent) initHistory(systemPrompt string) {
 		"role":    "system",
 		"content": systemPrompt,
 	}}
-}
-
-func (a *Agent) Run() error {
-	s := bufio.NewScanner(os.Stdin)
-
-	for {
-		fmt.Printf("%sYou>%s ", colorGreen, colorReset)
-		text, ok := getUserInput(s)
-		if !ok {
-			continue
-		}
-
-		emit := newTerminalEmitter()
-		if err := a.RunTurn(context.Background(), text, emit); err != nil {
-			return err
-		}
-	}
 }
 
 func (a *Agent) RunTurn(ctx context.Context, userMessage string, emit EventEmitter) error {
@@ -200,13 +180,3 @@ func (a *Agent) toolCall(ctx context.Context, toolCalls []ToolCall, emit EventEm
 	return results, nil
 }
 
-func getUserInput(r *bufio.Scanner) (string, bool) {
-	if !r.Scan() {
-		return "", false
-	}
-	text := strings.TrimSpace(r.Text())
-	if text == "" {
-		return "", false
-	}
-	return r.Text(), true
-}

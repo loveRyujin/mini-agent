@@ -25,9 +25,5 @@ func run() error {
 	model := cmp.Or(os.Getenv("LLM_MODEL"), defaultModel)
 
 	agent := NewAgent(apiKey, url, model)
-	if err := agent.Run(); err != nil {
-		return err
-	}
-
-	return nil
+	return runTUI(agent)
 }

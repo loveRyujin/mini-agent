@@ -10,19 +10,6 @@ import (
 	"net/http"
 )
 
-const (
-	colorGreen   = "\033[32m"
-	colorYellow  = "\033[33m"
-	colorBlue    = "\033[34m"
-	colorMagenta = "\033[35m"
-	colorCyan    = "\033[36m"
-	colorRed     = "\033[91m"
-	colorGray    = "\033[90m"
-	colorReset   = "\033[0m"
-
-	separator = "────────────────────────────────"
-)
-
 type Response struct {
 	ID      string   `json:"id"`
 	Object  string   `json:"object"`
