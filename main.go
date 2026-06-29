@@ -9,7 +9,7 @@ import (
 const (
 	// use ollama api, reference: https://docs.ollama.com/api/openai-compatibility
 	defaultUrl   = "http://localhost:11434/v1/chat/completions"
-	defaultModel = "gpt-oss:latest"
+	defaultModel = "deepseek-r1:latest"
 )
 
 func main() {

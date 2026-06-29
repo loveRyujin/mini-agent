@@ -36,11 +36,21 @@ type tuiModel struct {
 
 func newTUIModel(agent *Agent) *tuiModel {
 	ta := textarea.New()
-	ta.Placeholder = "输入消息…"
+	ta.Prompt = "> "
+	ta.Placeholder = ""
 	ta.Focus()
 	ta.CharLimit = 0
+	ta.ShowLineNumbers = false
 	ta.SetWidth(80)
 	ta.SetHeight(inputMinHeight)
+
+	focused, blurred := textarea.DefaultStyles()
+	focused.Base = lipgloss.NewStyle()
+	focused.CursorLine = lipgloss.NewStyle()
+	focused.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	blurred.Base = lipgloss.NewStyle()
+	ta.FocusedStyle = focused
+	ta.BlurredStyle = blurred
 
 	vp := viewport.New(80, 20)
 	vp.Style = lipgloss.NewStyle().Padding(0, 1)
@@ -54,7 +64,7 @@ func newTUIModel(agent *Agent) *tuiModel {
 }
 
 func (m *tuiModel) Init() tea.Cmd {
-	return tea.EnterAltScreen
+	return nil
 }
 
 func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -112,29 +122,35 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *tuiModel) View() string {
 	if !m.ready {
-		return "初始化…"
+		return lipgloss.NewStyle().Render("初始化...")
 	}
 
 	divider := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("8")).
-		Render(strings.Repeat("─", m.width))
+		Render(strings.Repeat("-", m.width))
+
+	hint := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8")).
+		Render("输入消息，Enter 发送，Ctrl+C 退出")
 
 	status := ""
 	if m.turnInProgress {
-		status = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("  生成中…")
+		status = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("  生成中...")
 	}
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		m.viewport.View(),
 		divider,
+		hint,
 		m.textarea.View()+status,
 	)
 }
 
 func (m *tuiModel) layout() {
 	inputHeight := inputMinHeight
-	viewportHeight := m.height - inputHeight - 2
+	// hint line + divider
+	viewportHeight := m.height - inputHeight - 3
 	if viewportHeight < 1 {
 		viewportHeight = 1
 	}

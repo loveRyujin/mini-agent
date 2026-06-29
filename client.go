@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 )
 
 type Response struct {
@@ -107,17 +109,21 @@ func (c *Client) CallLLMStream(ctx context.Context, req map[string]any) (SSEResp
 		r.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
 	}
 
-	ch := make(SSEResp, 10)
-
 	resp, err := c.cli.Do(r)
 	if err != nil {
 		return nil, err
 	}
 
-	statusCode := resp.StatusCode
-	if statusCode != http.StatusOK {
-		return nil, errors.New("something wrong when calling llm api")
+	if resp.StatusCode != http.StatusOK {
+		msg, readErr := readAPIError(resp)
+		_ = resp.Body.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		return nil, errors.New(msg)
 	}
+
+	ch := make(SSEResp, 10)
 
 	go func(ctx context.Context) {
 		defer func() {
@@ -127,14 +133,23 @@ func (c *Client) CallLLMStream(ctx context.Context, req map[string]any) (SSEResp
 
 		s := bufio.NewScanner(resp.Body)
 		for s.Scan() {
-			line := s.Text()
-			if line == "" || line == "data: [DONE]" {
+			line := strings.TrimSpace(s.Text())
+			if line == "" {
+				continue
+			}
+
+			data, ok := sseData(line)
+			if !ok {
 				continue
 			}
 
 			var v Response
-			if err := json.Unmarshal([]byte(line[6:]), &v); err != nil {
-				fmt.Println(err)
+			if err := json.Unmarshal([]byte(data), &v); err != nil {
+				ch <- Response{
+					Choices: []Choice{{
+						Delta: Delta{Content: fmt.Sprintf("SSE 解析失败: %v", err)},
+					}},
+				}
 				return
 			}
 
@@ -143,4 +158,37 @@ func (c *Client) CallLLMStream(ctx context.Context, req map[string]any) (SSEResp
 	}(ctx)
 
 	return ch, nil
+}
+
+func sseData(line string) (string, bool) {
+	if !strings.HasPrefix(line, "data:") {
+		return "", false
+	}
+	data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+	if data == "" || data == "[DONE]" {
+		return "", false
+	}
+	return data, true
+}
+
+func readAPIError(resp *http.Response) (string, error) {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var apiErr struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &apiErr); err == nil && apiErr.Error.Message != "" {
+		return apiErr.Error.Message, nil
+	}
+
+	if len(body) > 0 {
+		return string(body), nil
+	}
+
+	return fmt.Sprintf("LLM API 错误 (HTTP %d)", resp.StatusCode), nil
 }
