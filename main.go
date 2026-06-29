@@ -20,7 +20,7 @@ func main() {
 }
 
 func run() error {
-	apiKey := cmp.Or(os.Getenv("LLM_API_KEY"), defaultUrl)
+	apiKey := os.Getenv("LLM_API_KEY")
 	url := cmp.Or(os.Getenv("LLM_API_URL"), defaultUrl)
 	model := cmp.Or(os.Getenv("LLM_MODEL"), defaultModel)
 
