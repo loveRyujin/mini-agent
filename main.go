@@ -20,6 +20,10 @@ func main() {
 }
 
 func run() error {
+	if err := initWorkspace(); err != nil {
+		return fmt.Errorf("init workspace: %w", err)
+	}
+
 	if len(os.Args) > 1 && os.Args[1] == "-tui-prototype" {
 		return runTUIPrototype()
 	}

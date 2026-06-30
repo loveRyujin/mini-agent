@@ -33,6 +33,46 @@ func TestTranscript_conversationStream(t *testing.T) {
 	}
 }
 
+func TestTranscript_toolCallOrder(t *testing.T) {
+	tr := NewTranscript()
+	tr.AddUserMessage("read files")
+	tr.Apply(Event{
+		Kind:          EventToolCall,
+		ToolName:      "read_file",
+		ToolArguments: map[string]any{"path": "main.go"},
+	})
+	tr.Apply(Event{
+		Kind:        EventToolResult,
+		ToolName:    "read_file",
+		ToolContent: `{"status":"SUCCESS","data":{"file_content":"package main"}}`,
+	})
+	tr.Apply(Event{
+		Kind:          EventToolCall,
+		ToolName:      "list_file",
+		ToolArguments: map[string]any{"path": "."},
+	})
+	tr.Apply(Event{
+		Kind:        EventToolResult,
+		ToolName:    "list_file",
+		ToolContent: `{"status":"SUCCESS","data":{"files":["main.go"]}}`,
+	})
+	tr.Apply(Event{Kind: EventAnswerDelta, Text: "done"})
+	tr.Apply(Event{Kind: EventTurnComplete})
+
+	got := tr.EntryKinds()
+	want := []transcriptEntryKind{
+		entryUser,
+		entryToolCall,
+		entryToolResult,
+		entryToolCall,
+		entryToolResult,
+		entryAnswer,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("entry kinds:\n got: %v\nwant: %v", got, want)
+	}
+}
+
 func TestTranscript_errorVisible(t *testing.T) {
 	tr := NewTranscript()
 	tr.AddUserMessage("hi")

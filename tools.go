@@ -96,13 +96,30 @@ func (rf *readFile) Definition() map[string]any {
 	}
 }
 
+func toolPathArg(args ToolCall) (string, error) {
+	v, ok := args.Function.Arguments["path"]
+	if !ok || v == nil || v == "" {
+		return ".", nil
+	}
+	path, ok := v.(string)
+	if !ok {
+		return "", fmt.Errorf("path must be a string")
+	}
+	return path, nil
+}
+
 func (rf *readFile) Call(ctx context.Context, args ToolCall) map[string]any {
-	dir := "."
-	if args.Function.Arguments["path"] != "" {
-		dir = args.Function.Arguments["path"].(string)
+	path, err := toolPathArg(args)
+	if err != nil {
+		return failResp(args.ID, err)
 	}
 
-	content, err := os.ReadFile(dir)
+	resolved, err := resolveWorkspacePath(path)
+	if err != nil {
+		return failResp(args.ID, err)
+	}
+
+	content, err := os.ReadFile(resolved)
 	if err != nil {
 		return failResp(args.ID, err)
 	}
@@ -137,18 +154,23 @@ func (lf *listFile) Definition() map[string]any {
 }
 
 func (lf *listFile) Call(ctx context.Context, args ToolCall) map[string]any {
-	dir := "."
-	if args.Function.Arguments["path"] != "" {
-		dir = args.Function.Arguments["path"].(string)
+	dir, err := toolPathArg(args)
+	if err != nil {
+		return failResp(args.ID, err)
+	}
+
+	resolved, err := resolveWorkspacePath(dir)
+	if err != nil {
+		return failResp(args.ID, err)
 	}
 
 	var files []string
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(resolved, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		relPath, err := filepath.Rel(dir, path)
+		relPath, err := filepath.Rel(resolved, path)
 		if err != nil {
 			return err
 		}

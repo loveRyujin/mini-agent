@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -99,6 +100,7 @@ func TestRunTurn_toolLoop(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	workspaceDir = dir
 
 	backend := &scriptedBackend{
 		scripts: [][]Response{
@@ -147,6 +149,147 @@ func TestRunTurn_toolLoop(t *testing.T) {
 
 	if backend.calls != 2 {
 		t.Fatalf("backend calls = %d, want 2", backend.calls)
+	}
+}
+
+func TestRunTurn_multiToolLoop(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hello.txt")
+	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWd) })
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	workspaceDir = dir
+
+	backend := &scriptedBackend{
+		scripts: [][]Response{
+			{
+				{Choices: []Choice{{Delta: Delta{
+					ToolCalls: []ToolCall{{
+						ID:   "call-1",
+						Type: "function",
+						Function: Function{
+							Name:      "read_file",
+							Arguments: map[string]any{"path": "hello.txt"},
+						},
+					}},
+				}}}},
+			},
+			{
+				{Choices: []Choice{{Delta: Delta{
+					ToolCalls: []ToolCall{{
+						ID:   "call-2",
+						Type: "function",
+						Function: Function{
+							Name:      "list_file",
+							Arguments: map[string]any{"path": "."},
+						},
+					}},
+				}}}},
+			},
+			{
+				{Choices: []Choice{{Delta: Delta{Content: "done"}}}},
+			},
+		},
+	}
+
+	agent := &Agent{
+		Backend: backend,
+		Model:   "test-model",
+		Tools:   make(map[string]Tool),
+	}
+	agent.RegisterTool(&readFile{}, &listFile{})
+	agent.initHistory("system prompt")
+
+	emit, events := collectEmitter()
+	if err := agent.RunTurn(context.Background(), "inspect project", emit); err != nil {
+		t.Fatalf("RunTurn: %v", err)
+	}
+
+	got := eventKinds(events())
+	want := []EventKind{
+		EventToolCall,
+		EventToolResult,
+		EventToolCall,
+		EventToolResult,
+		EventAnswerDelta,
+		EventTurnComplete,
+		EventUsage,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("event kinds:\n got: %v\nwant: %v", got, want)
+	}
+
+	if backend.calls != 3 {
+		t.Fatalf("backend calls = %d, want 3", backend.calls)
+	}
+}
+
+func TestRunTurn_toolPathEscape(t *testing.T) {
+	dir := t.TempDir()
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWd) })
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	workspaceDir = dir
+
+	backend := &scriptedBackend{
+		scripts: [][]Response{
+			{
+				{Choices: []Choice{{Delta: Delta{
+					ToolCalls: []ToolCall{{
+						ID:   "call-1",
+						Type: "function",
+						Function: Function{
+							Name:      "read_file",
+							Arguments: map[string]any{"path": "../outside.txt"},
+						},
+					}},
+				}}}},
+			},
+			{
+				{Choices: []Choice{{Delta: Delta{Content: "cannot read"}}}},
+			},
+		},
+	}
+
+	agent := &Agent{
+		Backend: backend,
+		Model:   "test-model",
+		Tools:   make(map[string]Tool),
+	}
+	agent.RegisterTool(&readFile{})
+	agent.initHistory("system prompt")
+
+	emit, events := collectEmitter()
+	if err := agent.RunTurn(context.Background(), "read outside", emit); err != nil {
+		t.Fatalf("RunTurn: %v", err)
+	}
+
+	got := events()
+	var foundResult bool
+	for _, e := range got {
+		if e.Kind == EventToolResult {
+			foundResult = true
+			if !strings.Contains(e.ToolContent, "path escapes workspace") {
+				t.Fatalf("tool result should mention escape: %q", e.ToolContent)
+			}
+		}
+	}
+	if !foundResult {
+		t.Fatal("expected EventToolResult for path escape")
 	}
 }
 
