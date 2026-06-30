@@ -24,10 +24,6 @@ func run() error {
 		return fmt.Errorf("init workspace: %w", err)
 	}
 
-	if len(os.Args) > 1 && os.Args[1] == "-tui-prototype" {
-		return runTUIPrototype()
-	}
-
 	apiKey := os.Getenv("LLM_API_KEY")
 	url := cmp.Or(os.Getenv("LLM_API_URL"), defaultUrl)
 	model := cmp.Or(os.Getenv("LLM_MODEL"), defaultModel)
