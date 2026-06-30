@@ -32,6 +32,11 @@ func run() error {
 	url := cmp.Or(os.Getenv("LLM_API_URL"), defaultUrl)
 	model := cmp.Or(os.Getenv("LLM_MODEL"), defaultModel)
 
-	agent := NewAgent(apiKey, url, model)
+	systemPrompt, err := resolveSystemPrompt()
+	if err != nil {
+		return fmt.Errorf("system prompt: %w", err)
+	}
+
+	agent := NewAgent(apiKey, url, model, systemPrompt)
 	return runTUI(agent)
 }

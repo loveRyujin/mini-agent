@@ -46,5 +46,15 @@ Slash Command：
 Approval Gate 快捷键：
   Y  允许执行 Shell 命令
   N  拒绝执行
+
+配置（启动前设置环境变量）：
+  Inference Backend
+    LLM_API_URL   OpenAI 兼容 API 地址
+    LLM_API_KEY   API 密钥
+    LLM_MODEL     模型名称
+
+  System Prompt
+    MINI_AGENT_SYSTEM_PROMPT       直接覆盖系统提示词
+    MINI_AGENT_SYSTEM_PROMPT_FILE  从文件读取系统提示词（优先于上者）
 `)
 }

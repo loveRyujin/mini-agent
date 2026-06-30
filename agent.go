@@ -16,9 +16,10 @@ type Agent struct {
 	Tools        map[string]Tool
 	History      []map[string]any
 	ApprovalGate ApprovalGate
+	systemPrompt string
 }
 
-func NewAgent(apiKey, url, model string) *Agent {
+func NewAgent(apiKey, url, model, systemPrompt string) *Agent {
 	agent := &Agent{
 		Backend: &Client{
 			cli:    defaultHTTPClient(),
@@ -26,11 +27,12 @@ func NewAgent(apiKey, url, model string) *Agent {
 			url:    url,
 			model:  model,
 		},
-		Model: model,
-		Tools: make(map[string]Tool),
+		Model:        model,
+		Tools:        make(map[string]Tool),
+		systemPrompt: systemPrompt,
 	}
 	agent.RegisterTool(&readFile{}, &listFile{}, &writeFile{}, &workspaceSearch{}, &runShell{})
-	agent.initHistory(defaultSystemPrompt())
+	agent.initHistory(systemPrompt)
 
 	return agent
 }
@@ -53,11 +55,10 @@ func (a *Agent) initHistory(systemPrompt string) {
 }
 
 func (a *Agent) ClearSession() {
-	if len(a.History) == 0 {
-		a.initHistory(defaultSystemPrompt())
-		return
+	if a.systemPrompt == "" {
+		a.systemPrompt = defaultSystemPrompt()
 	}
-	a.History = []map[string]any{a.History[0]}
+	a.initHistory(a.systemPrompt)
 }
 
 func (a *Agent) RunTurn(ctx context.Context, userMessage string, emit EventEmitter) error {

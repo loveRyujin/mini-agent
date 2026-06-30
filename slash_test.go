@@ -34,7 +34,10 @@ func TestParseSlashCommand(t *testing.T) {
 
 func TestSlashHelpText(t *testing.T) {
 	text := slashHelpText()
-	for _, want := range []string{"/quit", "/clear", "/help", "Y", "N"} {
+	for _, want := range []string{
+		"/quit", "/clear", "/help", "Y", "N",
+		"LLM_API_URL", "MINI_AGENT_SYSTEM_PROMPT",
+	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("slashHelpText() missing %q:\n%s", want, text)
 		}
@@ -43,9 +46,10 @@ func TestSlashHelpText(t *testing.T) {
 
 func TestAgentClearSession(t *testing.T) {
 	agent := &Agent{
-		Backend: &scriptedBackend{},
-		Model:   "test-model",
-		Tools:   make(map[string]Tool),
+		Backend:      &scriptedBackend{},
+		Model:        "test-model",
+		Tools:        make(map[string]Tool),
+		systemPrompt: "system prompt",
 	}
 	agent.initHistory("system prompt")
 
