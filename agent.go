@@ -2,9 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
+
+const maxToolRoundsPerTurn = 25
+
+var errToolLoopLimit = errors.New("tool loop limit exceeded")
 
 type InferenceBackend interface {
 	CallLLMStream(ctx context.Context, req map[string]any) (SSEResp, error)
@@ -79,11 +84,17 @@ func (a *Agent) RunTurn(ctx context.Context, userMessage string, emit EventEmitt
 	}
 
 	var (
-		chunks     []string
-		tokenUsage []Usage
+		chunks      []string
+		tokenUsage  []Usage
+		lastToolSig string
 	)
 
-	for {
+	for round := 0; ; round++ {
+		if round >= maxToolRoundsPerTurn {
+			emit(Event{Kind: EventError, Err: fmt.Errorf("%w (%d rounds)", errToolLoopLimit, maxToolRoundsPerTurn)})
+			return errToolLoopLimit
+		}
+
 		req["messages"] = a.History
 
 		ch, err := a.Backend.CallLLMStream(ctx, req)
@@ -92,7 +103,8 @@ func (a *Agent) RunTurn(ctx context.Context, userMessage string, emit EventEmitt
 			return err
 		}
 
-		var isToolCall bool
+		toolAcc := newToolCallAccumulator()
+		var finishReason string
 
 		for msg := range ch {
 			if len(msg.Choices) == 0 {
@@ -100,33 +112,56 @@ func (a *Agent) RunTurn(ctx context.Context, userMessage string, emit EventEmitt
 				continue
 			}
 
-			delta := msg.Choices[0].Delta
-			switch {
-			case delta.Reasoning != "":
+			choice := msg.Choices[0]
+			if choice.FinishReason != "" {
+				finishReason = choice.FinishReason
+			}
+
+			delta := choice.Delta
+			if delta.Reasoning != "" {
 				emit(Event{Kind: EventReasoningDelta, Text: delta.Reasoning})
-
-			case len(delta.ToolCalls) > 0:
-				isToolCall = true
-				resp, err := a.toolCall(ctx, delta.ToolCalls, emit)
-				if err != nil {
-					emit(Event{Kind: EventError, Err: err})
-					return err
-				}
-				a.History = append(a.History, resp...)
-
-			case delta.Content != "":
+			}
+			if len(delta.ToolCalls) > 0 {
+				toolAcc.Add(delta.ToolCalls)
+			}
+			if delta.Content != "" {
 				emit(Event{Kind: EventAnswerDelta, Text: delta.Content})
 				chunks = append(chunks, delta.Content)
-
-			case delta.FinishReason != "":
 			}
 
 			tokenUsage = append(tokenUsage, msg.Usage)
 		}
 
-		if !isToolCall {
+		calls := toolAcc.Calls()
+		if len(calls) == 0 {
+			if finishReason == "tool_calls" {
+				emit(Event{
+					Kind: EventError,
+					Err:  fmt.Errorf("model finished with tool_calls but no valid tool call was parsed"),
+				})
+				return fmt.Errorf("incomplete tool call stream")
+			}
 			break
 		}
+
+		sig := toolSignature(calls)
+		if sig == lastToolSig {
+			emit(Event{
+				Kind: EventError,
+				Err:  fmt.Errorf("model repeated identical tool calls; stopping to avoid loop"),
+			})
+			return fmt.Errorf("duplicate tool call loop")
+		}
+		lastToolSig = sig
+
+		a.History = append(a.History, assistantToolCallsMessage(calls))
+		resp, err := a.toolCall(ctx, calls, emit)
+		if err != nil {
+			emit(Event{Kind: EventError, Err: err})
+			return err
+		}
+		a.History = append(a.History, resp...)
+		chunks = nil
 	}
 
 	assistantMessage := strings.Join(chunks, "")
@@ -184,6 +219,14 @@ func (a *Agent) toolCall(ctx context.Context, toolCalls []ToolCall, emit EventEm
 
 		tool, exist := a.Tools[toolCall.Function.Name]
 		if !exist {
+			resp := failResp(toolCall.ID, fmt.Errorf("unknown tool %q", toolCall.Function.Name))
+			content, _ := resp["content"].(string)
+			emit(Event{
+				Kind:        EventToolResult,
+				ToolName:    toolCall.Function.Name,
+				ToolContent: content,
+			})
+			results = append(results, resp)
 			continue
 		}
 

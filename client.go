@@ -22,8 +22,9 @@ type Response struct {
 }
 
 type Choice struct {
-	Index int64 `json:"index"`
-	Delta Delta `json:"delta"`
+	Index        int64  `json:"index"`
+	Delta        Delta  `json:"delta"`
+	FinishReason string `json:"finish_reason"`
 }
 
 type Delta struct {
@@ -43,29 +44,51 @@ type ToolCall struct {
 
 type Function struct {
 	Name      string         `json:"name"`
-	Arguments map[string]any `json:"arguments"`
+	Arguments map[string]any `json:"-"`
+	ArgsRaw   string         `json:"-"`
 }
 
 func (f *Function) UnmarshalJSON(data []byte) error {
-	var tmpF struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"`
+	var tmp struct {
+		Name      string          `json:"name"`
+		Arguments json.RawMessage `json:"arguments"`
 	}
-
-	if err := json.Unmarshal(data, &tmpF); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
 	}
 
-	args := make(map[string]any)
-	if err := json.Unmarshal([]byte(tmpF.Arguments), &args); err != nil {
-		return err
+	f.Name = tmp.Name
+	if len(tmp.Arguments) == 0 {
+		return nil
 	}
 
-	*f = Function{
-		Name:      tmpF.Name,
-		Arguments: args,
+	var args map[string]any
+	if err := json.Unmarshal(tmp.Arguments, &args); err == nil {
+		f.Arguments = args
+		return nil
 	}
+
+	var raw string
+	if err := json.Unmarshal(tmp.Arguments, &raw); err == nil {
+		f.ArgsRaw = raw
+		return nil
+	}
+
 	return nil
+}
+
+func (f Function) parsedArguments() map[string]any {
+	if len(f.Arguments) > 0 {
+		return f.Arguments
+	}
+	if f.ArgsRaw == "" {
+		return nil
+	}
+	var args map[string]any
+	if err := json.Unmarshal([]byte(f.ArgsRaw), &args); err != nil {
+		return nil
+	}
+	return args
 }
 
 type Usage struct {

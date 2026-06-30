@@ -5,13 +5,17 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/cellbuf"
 )
+
+const approvalScrimColor = "235"
 
 func renderApprovalModal(m *tuiModel) string {
 	t := m.theme
 	border := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(t.border).
+		Background(lipgloss.Color("234")).
 		Padding(1, 2).
 		Width(min(60, m.width-4))
 
@@ -23,33 +27,31 @@ func renderApprovalModal(m *tuiModel) string {
 	return border.Render(body)
 }
 
-func overlayCenter(base, modal string, width int) string {
-	baseLines := strings.Split(base, "\n")
-	modalLines := strings.Split(modal, "\n")
-	modalW := lipgloss.Width(modal)
-	startY := max(0, (len(baseLines)-len(modalLines))/2)
-	startX := max(0, (width-modalW)/2)
-
-	for i, ml := range modalLines {
-		y := startY + i
-		for len(baseLines) <= y {
-			baseLines = append(baseLines, "")
-		}
-		line := baseLines[y]
-		if lipgloss.Width(line) < width {
-			line += strings.Repeat(" ", width-lipgloss.Width(line))
-		}
-		runes := []rune(line)
-		mRunes := []rune(ml)
-		for j, r := range mRunes {
-			x := startX + j
-			if x < len(runes) {
-				runes[x] = r
-			}
-		}
-		baseLines[y] = string(runes)
+func renderDimScrim(width, height int) string {
+	if width < 1 || height < 1 {
+		return ""
 	}
-	return strings.Join(baseLines, "\n")
+	line := lipgloss.NewStyle().
+		Background(lipgloss.Color(approvalScrimColor)).
+		Width(width).
+		Render("")
+	lines := make([]string, height)
+	for i := range lines {
+		lines[i] = line
+	}
+	return strings.Join(lines, "\n")
+}
+
+func overlayModal(modal string, width, height int) string {
+	buf := cellbuf.NewBuffer(width, height)
+	cellbuf.SetContent(buf, renderDimScrim(width, height))
+
+	modalW := lipgloss.Width(modal)
+	modalH := lipgloss.Height(modal)
+	x := max(0, (width-modalW)/2)
+	y := max(0, (height-modalH)/2)
+	cellbuf.SetContentRect(buf, modal, cellbuf.Rect(x, y, modalW, modalH))
+	return cellbuf.Render(buf)
 }
 
 func (m *tuiModel) handleApprovalKeys(msg tea.KeyMsg) {
@@ -66,4 +68,5 @@ func (m *tuiModel) handleApprovalKeys(msg tea.KeyMsg) {
 func (m *tuiModel) clearApproval() {
 	m.approvalCommand = ""
 	m.approvalReplyCh = nil
+	m.textarea.Focus()
 }

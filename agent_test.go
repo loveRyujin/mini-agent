@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -413,6 +415,309 @@ func TestRunTurn_shellDenied(t *testing.T) {
 				t.Fatalf("expected denial message, got %q", e.ToolContent)
 			}
 		}
+	}
+}
+
+func TestRunTurn_toolLoopLimit(t *testing.T) {
+	dir := t.TempDir()
+	chdirWorkspace(t, dir)
+
+	scripts := make([][]Response, maxToolRoundsPerTurn+1)
+	for i := range scripts {
+		scripts[i] = []Response{
+			{Choices: []Choice{{Delta: Delta{
+				ToolCalls: []ToolCall{{
+					Index: 0,
+					ID:    fmt.Sprintf("call-loop-%d", i),
+					Type:  "function",
+					Function: Function{
+						Name:      "list_file",
+						Arguments: map[string]any{"path": fmt.Sprintf("dir%d", i)},
+					},
+				}},
+			}}}},
+		}
+	}
+
+	backend := &scriptedBackend{scripts: scripts}
+	agent := &Agent{
+		Backend: backend,
+		Model:   "test-model",
+		Tools:   make(map[string]Tool),
+	}
+	agent.RegisterTool(&listFile{})
+	agent.initHistory("system prompt")
+
+	emit, events := collectEmitter()
+	err := agent.RunTurn(context.Background(), "loop forever", emit)
+	if !errors.Is(err, errToolLoopLimit) {
+		t.Fatalf("RunTurn err = %v, want %v", err, errToolLoopLimit)
+	}
+
+	var foundError bool
+	for _, e := range events() {
+		if e.Kind == EventError && errors.Is(e.Err, errToolLoopLimit) {
+			foundError = true
+		}
+	}
+	if !foundError {
+		t.Fatal("expected EventError for tool loop limit")
+	}
+	if backend.calls != maxToolRoundsPerTurn {
+		t.Fatalf("backend calls = %d, want %d", backend.calls, maxToolRoundsPerTurn)
+	}
+}
+
+func TestRunTurn_streamingToolCallDeduplicated(t *testing.T) {
+	dir := t.TempDir()
+	chdirWorkspace(t, dir)
+
+	backend := &scriptedBackend{
+		scripts: [][]Response{
+			{
+				{Choices: []Choice{{Delta: Delta{
+					ToolCalls: []ToolCall{{
+						Index: 0,
+						ID:    "call-1",
+						Type:  "function",
+						Function: Function{
+							Name:      "list_file",
+							Arguments: map[string]any{"path": "."},
+						},
+					}},
+				}}}},
+				{Choices: []Choice{{Delta: Delta{
+					ToolCalls: []ToolCall{{
+						Index: 0,
+						Function: Function{
+							Name:      "list_file",
+							Arguments: map[string]any{"path": "."},
+						},
+					}},
+				}}}},
+			},
+			{
+				{Choices: []Choice{{Delta: Delta{Content: "done"}}}},
+			},
+		},
+	}
+
+	agent := &Agent{
+		Backend: backend,
+		Model:   "test-model",
+		Tools:   make(map[string]Tool),
+	}
+	agent.RegisterTool(&listFile{})
+	agent.initHistory("system prompt")
+
+	emit, events := collectEmitter()
+	if err := agent.RunTurn(context.Background(), "list files", emit); err != nil {
+		t.Fatalf("RunTurn: %v", err)
+	}
+
+	toolCallEvents := 0
+	for _, e := range events() {
+		if e.Kind == EventToolCall {
+			toolCallEvents++
+		}
+	}
+	if toolCallEvents != 1 {
+		t.Fatalf("tool call events = %d, want 1", toolCallEvents)
+	}
+}
+
+func TestRunTurn_toolHistoryIncludesAssistantToolCalls(t *testing.T) {
+	dir := t.TempDir()
+	chdirWorkspace(t, dir)
+
+	backend := &scriptedBackend{
+		scripts: [][]Response{
+			{
+				{Choices: []Choice{{Delta: Delta{
+					ToolCalls: []ToolCall{{
+						Index: 0,
+						ID:    "call-1",
+						Type:  "function",
+						Function: Function{
+							Name:      "list_file",
+							Arguments: map[string]any{"path": "."},
+						},
+					}},
+				}}}},
+			},
+			{
+				{Choices: []Choice{{Delta: Delta{Content: "done"}}}},
+			},
+		},
+	}
+
+	agent := &Agent{
+		Backend: backend,
+		Model:   "test-model",
+		Tools:   make(map[string]Tool),
+	}
+	agent.RegisterTool(&listFile{})
+	agent.initHistory("system prompt")
+
+	emit, _ := collectEmitter()
+	if err := agent.RunTurn(context.Background(), "list files", emit); err != nil {
+		t.Fatalf("RunTurn: %v", err)
+	}
+
+	var assistantIdx, toolIdx = -1, -1
+	for i, msg := range agent.History {
+		if msg["role"] == "assistant" && msg["tool_calls"] != nil {
+			assistantIdx = i
+		}
+		if msg["role"] == "tool" {
+			toolIdx = i
+		}
+	}
+	if assistantIdx < 0 {
+		t.Fatal("expected assistant message with tool_calls in history")
+	}
+	if toolIdx < 0 {
+		t.Fatal("expected tool result in history")
+	}
+	if assistantIdx > toolIdx {
+		t.Fatalf("assistant tool_calls (idx %d) should precede tool result (idx %d)", assistantIdx, toolIdx)
+	}
+}
+
+func TestRunTurn_unknownToolStillRecordsResult(t *testing.T) {
+	backend := &scriptedBackend{
+		scripts: [][]Response{
+			{
+				{Choices: []Choice{{Delta: Delta{
+					ToolCalls: []ToolCall{{
+						Index: 0,
+						ID:    "call-1",
+						Type:  "function",
+						Function: Function{
+							Name:      "missing_tool",
+							Arguments: map[string]any{},
+						},
+					}},
+				}}}},
+			},
+			{
+				{Choices: []Choice{{Delta: Delta{Content: "ok"}}}},
+			},
+		},
+	}
+
+	agent := &Agent{
+		Backend: backend,
+		Model:   "test-model",
+		Tools:   make(map[string]Tool),
+	}
+	agent.initHistory("system prompt")
+
+	emit, _ := collectEmitter()
+	if err := agent.RunTurn(context.Background(), "call missing", emit); err != nil {
+		t.Fatalf("RunTurn: %v", err)
+	}
+
+	var toolResults int
+	for _, msg := range agent.History {
+		if msg["role"] == "tool" {
+			toolResults++
+		}
+	}
+	if toolResults != 1 {
+		t.Fatalf("tool results in history = %d, want 1", toolResults)
+	}
+}
+
+func TestRunTurn_duplicateToolCallsStop(t *testing.T) {
+	dir := t.TempDir()
+	chdirWorkspace(t, dir)
+
+	alwaysTool := []Response{
+		{Choices: []Choice{{Delta: Delta{
+			ToolCalls: []ToolCall{{
+				Index: 0,
+				ID:    "call-1",
+				Type:  "function",
+				Function: Function{
+					Name:      "list_file",
+					Arguments: map[string]any{"path": "."},
+				},
+			}},
+		}}}},
+	}
+
+	backend := &scriptedBackend{
+		scripts: [][]Response{alwaysTool, alwaysTool},
+	}
+	agent := &Agent{
+		Backend: backend,
+		Model:   "test-model",
+		Tools:   make(map[string]Tool),
+	}
+	agent.RegisterTool(&listFile{})
+	agent.initHistory("system prompt")
+
+	emit, _ := collectEmitter()
+	err := agent.RunTurn(context.Background(), "loop", emit)
+	if err == nil {
+		t.Fatal("expected duplicate tool loop error")
+	}
+	if backend.calls != 2 {
+		t.Fatalf("backend calls = %d, want 2", backend.calls)
+	}
+}
+
+func TestRunTurn_reasoningAndToolCallsSameDelta(t *testing.T) {
+	dir := t.TempDir()
+	chdirWorkspace(t, dir)
+
+	backend := &scriptedBackend{
+		scripts: [][]Response{
+			{
+				{Choices: []Choice{{Delta: Delta{
+					Reasoning: "think",
+					ToolCalls: []ToolCall{{
+						Index: 0,
+						ID:    "call-1",
+						Type:  "function",
+						Function: Function{
+							Name:      "list_file",
+							Arguments: map[string]any{"path": "."},
+						},
+					}},
+				}}}},
+			},
+			{
+				{Choices: []Choice{{Delta: Delta{Content: "done"}}}},
+			},
+		},
+	}
+
+	agent := &Agent{
+		Backend: backend,
+		Model:   "test-model",
+		Tools:   make(map[string]Tool),
+	}
+	agent.RegisterTool(&listFile{})
+	agent.initHistory("system prompt")
+
+	emit, events := collectEmitter()
+	if err := agent.RunTurn(context.Background(), "list", emit); err != nil {
+		t.Fatalf("RunTurn: %v", err)
+	}
+
+	got := eventKinds(events())
+	want := []EventKind{
+		EventReasoningDelta,
+		EventToolCall,
+		EventToolResult,
+		EventAnswerDelta,
+		EventTurnComplete,
+		EventUsage,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("event kinds:\n got: %v\nwant: %v", got, want)
 	}
 }
 

@@ -1,6 +1,11 @@
 package main
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	"strings"
+
+	"github.com/atotto/clipboard"
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 func (m *tuiModel) toggleTranscriptFocus() {
 	m.transcriptFocus = !m.transcriptFocus
@@ -121,7 +126,10 @@ func (m *tuiModel) handleTranscriptKeys(msg tea.KeyMsg) bool {
 		m.moveFocus(1)
 		return true
 	case tea.KeyPgUp, tea.KeyPgDown:
-		m.viewport, _ = m.viewport.Update(msg)
+		m.scrollViewport(msg)
+		return true
+	case tea.KeyCtrlY:
+		m.copyFocusedEntry()
 		return true
 	}
 	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
@@ -135,7 +143,36 @@ func (m *tuiModel) handleTranscriptKeys(msg tea.KeyMsg) bool {
 		case 'e', 'E':
 			m.toggleFocusedExpand()
 			return true
+		case 'G':
+			m.viewport.GotoBottom()
+			m.followTail = true
+			return true
 		}
 	}
 	return false
+}
+
+func (m *tuiModel) copyFocusedEntry() {
+	text := m.focusedEntryPlainText()
+	if text == "" {
+		return
+	}
+	_ = clipboard.WriteAll(text)
+}
+
+func (m *tuiModel) focusedEntryPlainText() string {
+	entries := m.transcript.Entries()
+	if m.focusIdx < 0 || m.focusIdx >= len(entries) {
+		return ""
+	}
+	e := entries[m.focusIdx]
+	switch e.kind {
+	case entryToolCall:
+		if hasPairedToolResultEntry(entries, m.focusIdx) {
+			return entries[m.focusIdx+1].text
+		}
+		return strings.TrimSpace(e.meta + "\n" + e.text)
+	default:
+		return e.text
+	}
 }

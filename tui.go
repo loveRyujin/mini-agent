@@ -43,7 +43,18 @@ type tuiModel struct {
 
 	width, height  int
 	turnInProgress bool
+	followTail     bool
 	ready          bool
+
+	transcriptOriginY int
+	transcriptOriginX int
+	transcriptHitW    int
+	transcriptHitH    int
+	plainLines        []string
+	selecting         bool
+	selStart          textPos
+	selEnd            textPos
+	copyNotice        string
 }
 
 func newTUIModel(agent *Agent) *tuiModel {
@@ -77,6 +88,9 @@ func newTUIModel(agent *Agent) *tuiModel {
 		focusIdx:   -1,
 		theme:      defaultTUITheme,
 		workspace:  WorkspaceDisplay(),
+		followTail: true,
+		selStart:   textPos{line: -1, col: -1},
+		selEnd:     textPos{line: -1, col: -1},
 	}
 }
 
@@ -101,9 +115,12 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case eventMsg:
 		m.transcript.Apply(msg.event)
+		m.clearSelection()
+		m.copyNotice = ""
 		if msg.event.Kind == EventApprovalRequired {
 			m.approvalCommand = msg.event.Command
 			m.approvalReplyCh = msg.event.ApprovalReplyCh
+			m.textarea.Blur()
 		}
 		m.syncViewport()
 		return m, m.waitEvent()
@@ -131,6 +148,12 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.syncViewport()
 			return m, nil
 		case tea.KeyCtrlC, tea.KeyEsc:
+			if m.hasSelection() {
+				m.copySelection()
+				m.clearSelection()
+				m.syncViewport()
+				return m, nil
+			}
 			if m.transcriptFocus {
 				m.transcriptFocus = false
 				m.textarea.Focus()
@@ -193,15 +216,20 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, startTurn(m.agent, text)
 			}
 		case tea.KeyPgUp, tea.KeyPgDown:
-			m.viewport, _ = m.viewport.Update(msg)
+			m.scrollViewport(msg)
 			return m, nil
 		}
+
+		var cmd tea.Cmd
+		m.textarea, cmd = m.textarea.Update(msg)
+		m.layout()
+		return m, cmd
+
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 	}
 
-	var cmd tea.Cmd
-	m.textarea, cmd = m.textarea.Update(msg)
-	m.layout()
-	return m, cmd
+	return m, nil
 }
 
 func (m *tuiModel) View() string {
@@ -210,7 +238,7 @@ func (m *tuiModel) View() string {
 	}
 	panel := renderTUIPanel(m)
 	if m.approvalReplyCh != nil {
-		return overlayCenter(panel, renderApprovalModal(m), m.width)
+		return overlayModal(renderApprovalModal(m), m.width, m.height)
 	}
 	return panel
 }
@@ -245,7 +273,10 @@ func (m *tuiModel) footerText() string {
 	if m.approvalReplyCh != nil {
 		return "Y 允许执行  ·  N 拒绝"
 	}
-	return "Ctrl+T 对话区  ·  j/k 选块  ·  e/Space 展开  ·  Esc 回输入  ·  Enter 发送"
+	if m.copyNotice != "" {
+		return m.copyNotice + "  ·  鼠标拖拽选中复制  ·  PgUp/PgDn 滚动  ·  Enter 发送"
+	}
+	return "鼠标拖拽选中复制  ·  PgUp/PgDn 滚动  ·  Ctrl+T 对话区  ·  Enter 发送"
 }
 
 func renderTUIInput(m *tuiModel) string {
@@ -279,17 +310,43 @@ func (m *tuiModel) layout() {
 		vpH = 3
 	}
 	m.viewport.Height = vpH
+	m.updateTranscriptHitbox()
 	m.syncViewport()
 }
 
 func (m *tuiModel) syncViewport() {
-	m.viewport.SetContent(m.transcript.Render(TranscriptRenderOpts{
+	prevYOffset := m.viewport.YOffset
+	wasAtBottom := m.viewport.AtBottom()
+
+	content := m.transcript.Render(TranscriptRenderOpts{
 		Theme:           m.theme,
 		Expanded:        m.expanded,
 		FocusIdx:        m.focusIdx,
 		TranscriptFocus: m.transcriptFocus,
-	}))
-	m.viewport.GotoBottom()
+	})
+	m.plainLines = splitPlainLines(content)
+	if m.selActive() {
+		content = highlightSelection(content, m.plainLines, m.selStart, m.selEnd)
+	}
+
+	m.viewport.SetContent(content)
+
+	if m.followTail || wasAtBottom {
+		m.viewport.GotoBottom()
+		m.followTail = true
+		return
+	}
+
+	maxY := max(0, m.viewport.TotalLineCount()-m.viewport.Height)
+	if prevYOffset > maxY {
+		prevYOffset = maxY
+	}
+	m.viewport.SetYOffset(prevYOffset)
+}
+
+func (m *tuiModel) scrollViewport(msg tea.KeyMsg) {
+	m.viewport, _ = m.viewport.Update(msg)
+	m.followTail = m.viewport.AtBottom()
 }
 
 func (m *tuiModel) waitEvent() tea.Cmd {
@@ -319,7 +376,7 @@ func startTurn(agent *Agent, userText string) tea.Cmd {
 }
 
 func runTUI(agent *Agent) error {
-	p := tea.NewProgram(newTUIModel(agent), tea.WithAltScreen())
+	p := tea.NewProgram(newTUIModel(agent), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }

@@ -43,7 +43,11 @@ Slash Command：
   /clear  清空 Session 与 Transcript
   /help   显示此帮助
 
-Approval Gate 快捷键：
+Transcript 快捷键：
+  鼠标拖拽     选中文本，松开后自动复制
+  PgUp/PgDn    滚动对话记录
+  Ctrl+T       进入对话区（j/k 选块，Ctrl+Y 复制块）
+  G            跳至最新
   Y  允许执行 Shell 命令
   N  拒绝执行
 
