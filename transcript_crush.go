@@ -59,6 +59,9 @@ func renderTranscriptCrush(entries []transcriptEntry, opts TranscriptRenderOpts)
 			block = crushAssistantLine(e, opts.Theme)
 		case entryToolCall:
 			block = renderCrushToolBlockEntry(i, entries, opts)
+		case entryApproval:
+			block = lipgloss.NewStyle().Foreground(opts.Theme.tool).PaddingLeft(2).
+				Render("⏸ 等待批准: " + lipgloss.NewStyle().Foreground(opts.Theme.agent).Render(e.text))
 		case entryError:
 			block = lipgloss.NewStyle().Foreground(opts.Theme.error).PaddingLeft(2).Render("错误: " + e.text)
 		case entryUsage:

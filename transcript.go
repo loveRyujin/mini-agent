@@ -14,6 +14,7 @@ const (
 	entryUsage
 	entryToolCall
 	entryToolResult
+	entryApproval
 )
 
 type transcriptEntry struct {
@@ -55,6 +56,13 @@ func (t *Transcript) Apply(e Event) {
 			meta:     formatToolMeta(e.ToolName, e.ToolArguments),
 		})
 
+	case EventApprovalRequired:
+		t.endStreaming()
+		t.entries = append(t.entries, transcriptEntry{
+			kind: entryApproval,
+			text: e.Command,
+		})
+
 	case EventToolResult:
 		t.endStreaming()
 		t.entries = append(t.entries, transcriptEntry{
@@ -83,6 +91,9 @@ func (t *Transcript) Apply(e Event) {
 }
 
 func formatToolMeta(name string, args map[string]any) string {
+	if command, ok := args["command"].(string); ok && command != "" {
+		return command
+	}
 	if path, ok := args["path"].(string); ok && path != "" {
 		return path
 	}

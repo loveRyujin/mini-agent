@@ -17,61 +17,6 @@ type Tool interface {
 	Call(context.Context, ToolCall) map[string]any
 }
 
-type getCurrentWeather struct{}
-
-func (gcw *getCurrentWeather) Name() string {
-	return "get_current_weather"
-}
-
-func (gcw *getCurrentWeather) Definition() map[string]any {
-	return map[string]any{
-		"type": "function",
-		"function": map[string]any{
-			"name":        gcw.Name(),
-			"description": "Get the current weather in a given location",
-			"parameters": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"location": map[string]any{
-						"type":        "string",
-						"description": "The city and state, e.g. San Francisco, CA",
-					},
-					"unit": map[string]any{
-						"type": "string",
-						"enum": []string{"celsius", "fahrenheit"},
-					},
-				},
-			},
-			"required": []string{"location"},
-		},
-	}
-}
-
-func (gcw *getCurrentWeather) Call(ctx context.Context, args ToolCall) map[string]any {
-	location, ok := args.Function.Arguments["location"].(string)
-	if !ok {
-		return failResp(args.ID, errors.New("unsupport argument type"))
-	}
-
-	resp := struct {
-		Status string
-		Data   map[string]any
-	}{
-		Status: "Succeed",
-		Data: map[string]any{
-			"temperature": 30,
-			"description": fmt.Sprintf("The temperature in %s is 30", location),
-		},
-	}
-
-	d, err := json.Marshal(&resp)
-	if err != nil {
-		return failResp(args.ID, err)
-	}
-
-	return successResp(args.ID, "content", string(d))
-}
-
 type readFile struct{}
 
 func (rf *readFile) Name() string {

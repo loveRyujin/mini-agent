@@ -11,10 +11,11 @@ type InferenceBackend interface {
 }
 
 type Agent struct {
-	Backend InferenceBackend
-	Model   string
-	Tools   map[string]Tool
-	History []map[string]any
+	Backend      InferenceBackend
+	Model        string
+	Tools        map[string]Tool
+	History      []map[string]any
+	ApprovalGate ApprovalGate
 }
 
 func NewAgent(apiKey, url, model string) *Agent {
@@ -28,7 +29,7 @@ func NewAgent(apiKey, url, model string) *Agent {
 		Model: model,
 		Tools: make(map[string]Tool),
 	}
-	agent.RegisterTool(&getCurrentWeather{}, &readFile{}, &listFile{}, &writeFile{}, &workspaceSearch{})
+	agent.RegisterTool(&readFile{}, &listFile{}, &writeFile{}, &workspaceSearch{}, &runShell{})
 	agent.initHistory(defaultSystemPrompt())
 
 	return agent
@@ -41,7 +42,7 @@ func defaultSystemPrompt() string {
 
 Your workspace root is %s (display: %s). All tool paths must be relative to this directory. Use list_file with path "." to explore the workspace. You cannot access files outside the workspace.
 
-Read and inspect code with read_file and workspace_search. Create or update files with write_file (full-file overwrite). Be concise and practical.`, root, display)
+Read and inspect code with read_file and workspace_search. Create or update files with write_file (full-file overwrite). Run commands with run_shell (Shell Execution; requires Approval Gate). Be concise and practical.`, root, display)
 }
 
 func (a *Agent) initHistory(systemPrompt string) {
@@ -177,7 +178,21 @@ func (a *Agent) toolCall(ctx context.Context, toolCalls []ToolCall, emit EventEm
 			continue
 		}
 
-		resp := tool.Call(ctx, toolCall)
+		var resp map[string]any
+		if gt, ok := tool.(GatedTool); ok {
+			allowed, err := a.requestApproval(ctx, gt, toolCall, emit)
+			if err != nil {
+				return nil, err
+			}
+			if !allowed {
+				resp = failResp(toolCall.ID, errShellDenied)
+			} else {
+				resp = tool.Call(ctx, toolCall)
+			}
+		} else {
+			resp = tool.Call(ctx, toolCall)
+		}
+
 		content, _ := resp["content"].(string)
 		emit(Event{
 			Kind:        EventToolResult,
@@ -189,5 +204,31 @@ func (a *Agent) toolCall(ctx context.Context, toolCalls []ToolCall, emit EventEm
 	}
 
 	return results, nil
+}
+
+func (a *Agent) requestApproval(ctx context.Context, gt GatedTool, toolCall ToolCall, emit EventEmitter) (bool, error) {
+	req := ApprovalRequest{
+		ToolCallID: toolCall.ID,
+		ToolName:   toolCall.Function.Name,
+		Summary:    gt.ApprovalSummary(toolCall),
+	}
+
+	if a.ApprovalGate != nil {
+		return a.ApprovalGate.RequestApproval(ctx, req, emit)
+	}
+
+	ch := make(chan bool, 1)
+	emit(Event{
+		Kind:            EventApprovalRequired,
+		Command:         req.Summary,
+		ApprovalReplyCh: ch,
+	})
+
+	select {
+	case allowed := <-ch:
+		return allowed, nil
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
 }
 

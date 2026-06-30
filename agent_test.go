@@ -293,6 +293,129 @@ func TestRunTurn_toolPathEscape(t *testing.T) {
 	}
 }
 
+func TestRunTurn_shellAllowed(t *testing.T) {
+	dir := t.TempDir()
+	chdirWorkspace(t, dir)
+
+	backend := &scriptedBackend{
+		scripts: [][]Response{
+			{
+				{Choices: []Choice{{Delta: Delta{
+					ToolCalls: []ToolCall{{
+						ID:   "call-1",
+						Type: "function",
+						Function: Function{
+							Name:      "run_shell",
+							Arguments: map[string]any{"command": "echo allowed"},
+						},
+					}},
+				}}}},
+			},
+			{
+				{Choices: []Choice{{Delta: Delta{Content: "done"}}}},
+			},
+		},
+	}
+
+	agent := &Agent{
+		Backend:      backend,
+		Model:        "test-model",
+		Tools:        make(map[string]Tool),
+		ApprovalGate: newStaticApprovalGate(true),
+	}
+	agent.RegisterTool(&runShell{})
+	agent.initHistory("system prompt")
+
+	emit, events := collectEmitter()
+	if err := agent.RunTurn(context.Background(), "run echo", emit); err != nil {
+		t.Fatalf("RunTurn: %v", err)
+	}
+
+	got := eventKinds(events())
+	want := []EventKind{
+		EventToolCall,
+		EventApprovalRequired,
+		EventToolResult,
+		EventAnswerDelta,
+		EventTurnComplete,
+		EventUsage,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("event kinds:\n got: %v\nwant: %v", got, want)
+	}
+
+	for _, e := range events() {
+		if e.Kind == EventToolResult {
+			if !strings.Contains(e.ToolContent, "allowed") {
+				t.Fatalf("tool result should contain command output: %q", e.ToolContent)
+			}
+		}
+	}
+}
+
+func TestRunTurn_shellDenied(t *testing.T) {
+	dir := t.TempDir()
+	chdirWorkspace(t, dir)
+
+	backend := &scriptedBackend{
+		scripts: [][]Response{
+			{
+				{Choices: []Choice{{Delta: Delta{
+					ToolCalls: []ToolCall{{
+						ID:   "call-1",
+						Type: "function",
+						Function: Function{
+							Name:      "run_shell",
+							Arguments: map[string]any{"command": "echo denied"},
+						},
+					}},
+				}}}},
+			},
+			{
+				{Choices: []Choice{{Delta: Delta{Content: "ok"}}}},
+			},
+		},
+	}
+
+	agent := &Agent{
+		Backend:      backend,
+		Model:        "test-model",
+		Tools:        make(map[string]Tool),
+		ApprovalGate: newStaticApprovalGate(false),
+	}
+	agent.RegisterTool(&runShell{})
+	agent.initHistory("system prompt")
+
+	emit, events := collectEmitter()
+	if err := agent.RunTurn(context.Background(), "run echo", emit); err != nil {
+		t.Fatalf("RunTurn: %v", err)
+	}
+
+	got := eventKinds(events())
+	want := []EventKind{
+		EventToolCall,
+		EventApprovalRequired,
+		EventToolResult,
+		EventAnswerDelta,
+		EventTurnComplete,
+		EventUsage,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("event kinds:\n got: %v\nwant: %v", got, want)
+	}
+
+	for _, e := range events() {
+		if e.Kind == EventToolResult {
+			if !strings.Contains(e.ToolContent, "FAILED") {
+				t.Fatalf("expected FAILED tool result, got %q", e.ToolContent)
+			}
+			if !strings.Contains(e.ToolContent, "denied") {
+				t.Fatalf("expected denial message, got %q", e.ToolContent)
+			}
+		}
+	}
+}
+
 func eventKinds(events []Event) []EventKind {
 	kinds := make([]EventKind, len(events))
 	for i, e := range events {

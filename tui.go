@@ -37,6 +37,9 @@ type tuiModel struct {
 	theme           tuiTheme
 	workspace       string
 
+	approvalCommand string
+	approvalReplyCh chan<- bool
+
 	width, height  int
 	turnInProgress bool
 	ready          bool
@@ -97,6 +100,10 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case eventMsg:
 		m.transcript.Apply(msg.event)
+		if msg.event.Kind == EventApprovalRequired {
+			m.approvalCommand = msg.event.Command
+			m.approvalReplyCh = msg.event.ApprovalReplyCh
+		}
 		m.syncViewport()
 		return m, m.waitEvent()
 
@@ -107,6 +114,10 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.approvalReplyCh != nil {
+			m.handleApprovalKeys(msg)
+			return m, nil
+		}
 		if m.transcriptFocus {
 			if m.handleTranscriptKeys(msg) {
 				m.syncViewport()
@@ -170,7 +181,11 @@ func (m *tuiModel) View() string {
 	if !m.ready {
 		return lipgloss.NewStyle().Render("初始化...")
 	}
-	return renderTUIPanel(m)
+	panel := renderTUIPanel(m)
+	if m.approvalReplyCh != nil {
+		return overlayCenter(panel, renderApprovalModal(m), m.width)
+	}
+	return panel
 }
 
 func renderTUIPanel(m *tuiModel) string {
@@ -180,7 +195,9 @@ func renderTUIPanel(m *tuiModel) string {
 	footerStyle := lipgloss.NewStyle().Foreground(t.dim).Padding(0, 1)
 
 	status := lipgloss.NewStyle().Foreground(t.user).Bold(true).Render("● 就绪")
-	if m.turnInProgress {
+	if m.approvalReplyCh != nil {
+		status = lipgloss.NewStyle().Foreground(t.gold).Bold(true).Render("● 等待批准")
+	} else if m.turnInProgress {
 		status = lipgloss.NewStyle().Foreground(t.tool).Bold(true).Render("● 生成中")
 	}
 	title := titleStyle.Width(m.width).Render(
@@ -193,8 +210,15 @@ func renderTUIPanel(m *tuiModel) string {
 		Render(m.agent.Model + "  ·  " + m.workspace + "  ·  " + t.name)
 	transcriptPanel := panelStyle.Width(m.width - 2).Render(m.viewport.View())
 	inputPanel := panelStyle.Width(m.width - 2).Render(renderTUIInput(m))
-	footer := footerStyle.Width(m.width).Render("Ctrl+T 对话区  ·  j/k 选块  ·  e/Space 展开  ·  Esc 回输入  ·  Enter 发送")
+	footer := footerStyle.Width(m.width).Render(m.footerText())
 	return lipgloss.JoinVertical(lipgloss.Left, title, subtitle, transcriptPanel, inputPanel, footer)
+}
+
+func (m *tuiModel) footerText() string {
+	if m.approvalReplyCh != nil {
+		return "Y 允许执行  ·  N 拒绝"
+	}
+	return "Ctrl+T 对话区  ·  j/k 选块  ·  e/Space 展开  ·  Esc 回输入  ·  Enter 发送"
 }
 
 func renderTUIInput(m *tuiModel) string {
