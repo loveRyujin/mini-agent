@@ -52,7 +52,7 @@ func renderTranscriptB(entries []protoEntry, opts transcriptRenderOpts) string {
 	case 2:
 		return renderTranscriptCompact(entries, opts, compactLabeled)
 	default:
-		return renderTranscriptCrush(entries, opts)
+		return renderProtoTranscriptCrush(entries, opts)
 	}
 }
 

@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 type transcriptEntryKind int
@@ -19,8 +17,10 @@ const (
 )
 
 type transcriptEntry struct {
-	kind transcriptEntryKind
-	text string
+	kind     transcriptEntryKind
+	text     string
+	meta     string // 工具参数摘要，如 path
+	toolName string
 }
 
 const noStreaming transcriptEntryKind = -1
@@ -49,8 +49,10 @@ func (t *Transcript) Apply(e Event) {
 	case EventToolCall:
 		t.endStreaming()
 		t.entries = append(t.entries, transcriptEntry{
-			kind: entryToolCall,
-			text: fmt.Sprintf("%s(%v)", e.ToolName, e.ToolArguments),
+			kind:     entryToolCall,
+			text:     fmt.Sprintf("%s(%v)", e.ToolName, e.ToolArguments),
+			toolName: e.ToolName,
+			meta:     formatToolMeta(e.ToolName, e.ToolArguments),
 		})
 
 	case EventToolResult:
@@ -80,6 +82,16 @@ func (t *Transcript) Apply(e Event) {
 	}
 }
 
+func formatToolMeta(name string, args map[string]any) string {
+	if path, ok := args["path"].(string); ok && path != "" {
+		return path
+	}
+	if pattern, ok := args["pattern"].(string); ok && pattern != "" {
+		return pattern
+	}
+	return ""
+}
+
 func (t *Transcript) appendStreaming(kind transcriptEntryKind, text string) {
 	if t.streaming == kind {
 		last := &t.entries[len(t.entries)-1]
@@ -95,6 +107,10 @@ func (t *Transcript) endStreaming() {
 	t.streaming = noStreaming
 }
 
+func (t *Transcript) Entries() []transcriptEntry {
+	return t.entries
+}
+
 func (t *Transcript) EntryKinds() []transcriptEntryKind {
 	kinds := make([]transcriptEntryKind, len(t.entries))
 	for i, e := range t.entries {
@@ -107,27 +123,14 @@ func (t *Transcript) EntryText(i int) string {
 	return t.entries[i].text
 }
 
-func (t *Transcript) Render() string {
-	var lines []string
-	for _, e := range t.entries {
-		switch e.kind {
-		case entryUser:
-			lines = append(lines, userStyle.Render("你: "+e.text))
-		case entryReasoning:
-			lines = append(lines, reasoningStyle.Render("推理: "+e.text))
-		case entryAnswer:
-			lines = append(lines, answerStyle.Render(e.text))
-		case entryError:
-			lines = append(lines, errorStyle.Render("错误: "+e.text))
-		case entryUsage:
-			lines = append(lines, usageStyle.Render(e.text))
-		case entryToolCall:
-			lines = append(lines, toolStyle.Render("工具调用: "+e.text))
-		case entryToolResult:
-			lines = append(lines, toolStyle.Render("工具结果: "+e.text))
-		}
+func (t *Transcript) Render(opts TranscriptRenderOpts) string {
+	if opts.Expanded == nil {
+		opts.Expanded = make(map[int]bool)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+	if opts.Theme.name == "" {
+		opts.Theme = defaultTUITheme
+	}
+	return renderTranscriptCrush(t.entries, opts)
 }
 
 func formatUsage(u Usage) string {
@@ -136,12 +139,3 @@ func formatUsage(u Usage) string {
 		u.CompletionToken, u.PromptToken, u.TotalToken,
 	)
 }
-
-var (
-	userStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))
-	reasoningStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
-	answerStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-	errorStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	usageStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	toolStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-)

@@ -36,7 +36,7 @@ func hasPairedToolResult(entries []protoEntry, callIdx int) bool {
 		callIdx+1 < len(entries) && entries[callIdx+1].kind == protoToolResult
 }
 
-func renderTranscriptCrush(entries []protoEntry, opts transcriptRenderOpts) string {
+func renderProtoTranscriptCrush(entries []protoEntry, opts transcriptRenderOpts) string {
 	var blocks []string
 	for i, e := range entries {
 		if isPairedToolResult(entries, i) {
@@ -75,14 +75,14 @@ func renderBlockFocus(idx int, content string, opts transcriptRenderOpts) string
 }
 
 func crushUser(e protoEntry, t protoTheme) string {
-	return crushLeftBar(t.user, e.text, false)
+	return protoCrushLeftBar(t.user, e.text, false)
 }
 
 func crushAssistant(e protoEntry, t protoTheme) string {
-	return crushLeftBar(t.agent, e.text, true)
+	return protoCrushLeftBar(t.agent, e.text, true)
 }
 
-func crushLeftBar(color lipgloss.Color, text string, dim bool) string {
+func protoCrushLeftBar(color lipgloss.Color, text string, dim bool) string {
 	bar := lipgloss.NewStyle().Foreground(color).Render("▌")
 	style := lipgloss.NewStyle()
 	if dim {

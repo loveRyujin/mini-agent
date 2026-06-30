@@ -82,13 +82,15 @@ fold 时抽出 `Theme` 结构体，支持配置或环境变量切换，默认 Ma
 
 ## fold 进 `tui.go` 时
 
-- [ ] `Theme` 可配置配色（默认 Maple）
-- [ ] Transcript item 化（user / assistant / tool call+result / reasoning / usage）
-- [ ] 截断常量 `responseContextHeight = 10`
-- [ ] 对话区聚焦：`Ctrl+T` + `j/k/e`，`isFocusable` 仅 reasoning + tool call
-- [ ] 工具块合并渲染 + 展开状态挂 call index
-- [ ] 中文输入提示外侧渲染（不用 textarea Placeholder）
-- [ ] 正式环境 transcript 聚焦时 Space 展开，输入框失焦
+- [x] `Theme` 可配置配色（默认 Maple）— `tui_theme.go`
+- [x] Transcript item 化（user / assistant / tool call+result / reasoning / usage / error）
+- [x] 截断常量 `responseContextHeight = 10`
+- [x] 对话区聚焦：`Ctrl+T` + `j/k/e`，仅 reasoning + tool call 可选
+- [x] 工具块合并渲染 + 展开状态挂 call index
+- [x] 中文输入提示外侧渲染（不用 textarea Placeholder）
+- [x] B 冒险岛面板外壳
+- [ ] 主题切换（F11/F12，正式版可后置）
+- [ ] 删除 `tui_prototype*.go` 与 `prototype/tui/` 冗余
 
 ## 实现文件（主包）
 
