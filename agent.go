@@ -28,7 +28,7 @@ func NewAgent(apiKey, url, model string) *Agent {
 		Model: model,
 		Tools: make(map[string]Tool),
 	}
-	agent.RegisterTool(&getCurrentWeather{}, &readFile{}, &listFile{})
+	agent.RegisterTool(&getCurrentWeather{}, &readFile{}, &listFile{}, &writeFile{}, &workspaceSearch{})
 	agent.initHistory(defaultSystemPrompt())
 
 	return agent
@@ -41,7 +41,7 @@ func defaultSystemPrompt() string {
 
 Your workspace root is %s (display: %s). All tool paths must be relative to this directory. Use list_file with path "." to explore the workspace. You cannot access files outside the workspace.
 
-Read and inspect code with tools before answering. Be concise and practical.`, root, display)
+Read and inspect code with read_file and workspace_search. Create or update files with write_file (full-file overwrite). Be concise and practical.`, root, display)
 }
 
 func (a *Agent) initHistory(systemPrompt string) {

@@ -86,6 +86,180 @@ func TestListFile_rejectsEscape(t *testing.T) {
 	}
 }
 
+func TestWriteFile_createsFile(t *testing.T) {
+	dir := t.TempDir()
+	chdirWorkspace(t, dir)
+
+	wf := &writeFile{}
+	resp := wf.Call(context.Background(), ToolCall{
+		ID: "call-1",
+		Function: Function{
+			Name: "write_file",
+			Arguments: map[string]any{
+				"path":    "out.txt",
+				"content": "hello world",
+			},
+		},
+	})
+
+	content, _ := resp["content"].(string)
+	if !strings.Contains(content, "SUCCESS") {
+		t.Fatalf("expected SUCCESS, got %q", content)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "out.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "hello world" {
+		t.Fatalf("file content = %q, want %q", got, "hello world")
+	}
+}
+
+func TestWriteFile_overwritesExisting(t *testing.T) {
+	dir := t.TempDir()
+	chdirWorkspace(t, dir)
+
+	path := filepath.Join(dir, "out.txt")
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	wf := &writeFile{}
+	resp := wf.Call(context.Background(), ToolCall{
+		ID: "call-1",
+		Function: Function{
+			Name: "write_file",
+			Arguments: map[string]any{
+				"path":    "out.txt",
+				"content": "new",
+			},
+		},
+	})
+
+	content, _ := resp["content"].(string)
+	if !strings.Contains(content, "SUCCESS") {
+		t.Fatalf("expected SUCCESS, got %q", content)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "new" {
+		t.Fatalf("file content = %q, want %q", got, "new")
+	}
+}
+
+func TestWriteFile_rejectsEscape(t *testing.T) {
+	dir := t.TempDir()
+	chdirWorkspace(t, dir)
+
+	wf := &writeFile{}
+	resp := wf.Call(context.Background(), ToolCall{
+		ID: "call-1",
+		Function: Function{
+			Name: "write_file",
+			Arguments: map[string]any{
+				"path":    "../outside.txt",
+				"content": "nope",
+			},
+		},
+	})
+
+	content, _ := resp["content"].(string)
+	if !strings.Contains(content, "FAILED") || !strings.Contains(content, "path escapes workspace") {
+		t.Fatalf("expected escape error, got %q", content)
+	}
+}
+
+func TestWorkspaceSearch_contentMatch(t *testing.T) {
+	dir := t.TempDir()
+	chdirWorkspace(t, dir)
+
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\nfunc foo() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ws := &workspaceSearch{}
+	resp := ws.Call(context.Background(), ToolCall{
+		ID: "call-1",
+		Function: Function{
+			Name: "workspace_search",
+			Arguments: map[string]any{
+				"pattern": "func foo",
+				"path":    ".",
+			},
+		},
+	})
+
+	content, _ := resp["content"].(string)
+	if !strings.Contains(content, "SUCCESS") {
+		t.Fatalf("expected SUCCESS, got %q", content)
+	}
+	if !strings.Contains(content, "main.go") {
+		t.Fatalf("expected main.go in results, got %q", content)
+	}
+}
+
+func TestWorkspaceSearch_filenameMatch(t *testing.T) {
+	dir := t.TempDir()
+	chdirWorkspace(t, dir)
+
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ws := &workspaceSearch{}
+	resp := ws.Call(context.Background(), ToolCall{
+		ID: "call-1",
+		Function: Function{
+			Name: "workspace_search",
+			Arguments: map[string]any{
+				"pattern": "*.go",
+				"path":    ".",
+				"mode":    "filename",
+			},
+		},
+	})
+
+	content, _ := resp["content"].(string)
+	if !strings.Contains(content, "SUCCESS") {
+		t.Fatalf("expected SUCCESS, got %q", content)
+	}
+	if !strings.Contains(content, "main.go") {
+		t.Fatalf("expected main.go in results, got %q", content)
+	}
+	if strings.Contains(content, "readme.txt") {
+		t.Fatalf("did not expect readme.txt in filename results, got %q", content)
+	}
+}
+
+func TestWorkspaceSearch_rejectsEscape(t *testing.T) {
+	dir := t.TempDir()
+	chdirWorkspace(t, dir)
+
+	ws := &workspaceSearch{}
+	resp := ws.Call(context.Background(), ToolCall{
+		ID: "call-1",
+		Function: Function{
+			Name: "workspace_search",
+			Arguments: map[string]any{
+				"pattern": "foo",
+				"path":    "../outside",
+			},
+		},
+	})
+
+	content, _ := resp["content"].(string)
+	if !strings.Contains(content, "FAILED") || !strings.Contains(content, "path escapes workspace") {
+		t.Fatalf("expected escape error, got %q", content)
+	}
+}
+
 func TestListFile_withinWorkspace(t *testing.T) {
 	dir := t.TempDir()
 	chdirWorkspace(t, dir)
