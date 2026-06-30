@@ -52,6 +52,14 @@ func (a *Agent) initHistory(systemPrompt string) {
 	}}
 }
 
+func (a *Agent) ClearSession() {
+	if len(a.History) == 0 {
+		a.initHistory(defaultSystemPrompt())
+		return
+	}
+	a.History = []map[string]any{a.History[0]}
+}
+
 func (a *Agent) RunTurn(ctx context.Context, userMessage string, emit EventEmitter) error {
 	a.History = append(a.History, map[string]any{
 		"role":    "user",

@@ -15,6 +15,7 @@ const (
 	entryToolCall
 	entryToolResult
 	entryApproval
+	entrySystem
 )
 
 type transcriptEntry struct {
@@ -37,6 +38,16 @@ func NewTranscript() *Transcript {
 
 func (t *Transcript) AddUserMessage(text string) {
 	t.entries = append(t.entries, transcriptEntry{kind: entryUser, text: text})
+}
+
+func (t *Transcript) AddSystemMessage(text string) {
+	t.endStreaming()
+	t.entries = append(t.entries, transcriptEntry{kind: entrySystem, text: text})
+}
+
+func (t *Transcript) Reset() {
+	t.entries = nil
+	t.streaming = noStreaming
 }
 
 func (t *Transcript) Apply(e Event) {

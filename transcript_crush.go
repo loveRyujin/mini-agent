@@ -66,6 +66,8 @@ func renderTranscriptCrush(entries []transcriptEntry, opts TranscriptRenderOpts)
 			block = lipgloss.NewStyle().Foreground(opts.Theme.error).PaddingLeft(2).Render("错误: " + e.text)
 		case entryUsage:
 			block = lipgloss.NewStyle().Foreground(opts.Theme.dim).PaddingLeft(2).Render(e.text)
+		case entrySystem:
+			block = lipgloss.NewStyle().Foreground(opts.Theme.dim).PaddingLeft(2).Render(e.text)
 		}
 		if block != "" {
 			blocks = append(blocks, renderTranscriptBlockFocus(i, block, opts))

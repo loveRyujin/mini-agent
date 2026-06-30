@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -162,9 +163,35 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.textarea.SetValue("")
-			m.transcript.AddUserMessage(text)
-			m.syncViewport()
-			return m, startTurn(m.agent, text)
+			switch result, arg := parseSlashCommand(text); result {
+			case slashQuit:
+				return m, tea.Quit
+			case slashClear:
+				m.agent.ClearSession()
+				m.transcript.Reset()
+				m.expanded = make(map[int]bool)
+				m.focusIdx = -1
+				m.transcriptFocus = false
+				m.textarea.Focus()
+				m.syncViewport()
+				return m, nil
+			case slashHelp:
+				m.transcript.AddSystemMessage(slashHelpText())
+				m.syncViewport()
+				return m, nil
+			case slashUnknown:
+				msg := "未知命令。"
+				if arg != "" {
+					msg = fmt.Sprintf("未知命令 /%s。", arg)
+				}
+				m.transcript.AddSystemMessage(msg + " 输入 /help 查看可用命令。")
+				m.syncViewport()
+				return m, nil
+			default:
+				m.transcript.AddUserMessage(text)
+				m.syncViewport()
+				return m, startTurn(m.agent, text)
+			}
 		case tea.KeyPgUp, tea.KeyPgDown:
 			m.viewport, _ = m.viewport.Update(msg)
 			return m, nil
