@@ -18,6 +18,26 @@ func initWorkspace() error {
 	return nil
 }
 
+func WorkspaceRoot() string {
+	if workspaceDir == "" {
+		_ = initWorkspace()
+	}
+	return workspaceDir
+}
+
+func WorkspaceDisplay() string {
+	wd := WorkspaceRoot()
+	if wd == "" {
+		return "."
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		if rel, err := filepath.Rel(home, wd); err == nil && !strings.HasPrefix(rel, "..") {
+			return "~/" + filepath.ToSlash(rel)
+		}
+	}
+	return wd
+}
+
 func resolveWorkspacePath(rel string) (string, error) {
 	if workspaceDir == "" {
 		if err := initWorkspace(); err != nil {

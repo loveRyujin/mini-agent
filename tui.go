@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -74,21 +72,8 @@ func newTUIModel(agent *Agent) *tuiModel {
 		expanded:   make(map[int]bool),
 		focusIdx:   -1,
 		theme:      defaultTUITheme,
-		workspace:  workspaceLabel(),
+		workspace:  WorkspaceDisplay(),
 	}
-}
-
-func workspaceLabel() string {
-	wd, err := os.Getwd()
-	if err != nil {
-		return "."
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		if rel, err := filepath.Rel(home, wd); err == nil && !strings.HasPrefix(rel, "..") {
-			return "~/" + filepath.ToSlash(rel)
-		}
-	}
-	return wd
 }
 
 func (m *tuiModel) Init() tea.Cmd {
