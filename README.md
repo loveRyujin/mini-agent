@@ -28,8 +28,10 @@ ollama run <your_model_name>
 
 ## 运行 Agent
 
+在目标项目目录下启动（该目录即为 **Workspace**）：
+
 ```sh
-go run .
+go run ./cmd/mini-agent
 ```
 
 在 TUI 中输入 `/help` 可查看 Slash Command 与配置说明。
@@ -57,7 +59,7 @@ go run .
 
 ```sh
 export MINI_AGENT_SYSTEM_PROMPT_FILE="$PWD/.mini-agent-prompt.txt"
-go run .
+go run ./cmd/mini-agent
 ```
 
 ## 文档

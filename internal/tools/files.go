@@ -22,13 +22,13 @@ func (rf *ReadFile) Definition() map[string]any {
 		"type": "function",
 		"function": map[string]any{
 			"name":        rf.Name(),
-			"description": "Read the contents of a given file path or search for files containing a pattern. When searching file contents, returns line numbers where the pattern is found.",
+			"description": "Read the full contents of a single file in the workspace. Use workspace_search to find text or files by pattern.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"path": map[string]any{
 						"type":        "string",
-						"description": "The relative path of a file in the working directory. If pattern is provided, this can be a directory path to search in.",
+						"description": "Relative path to the file in the workspace.",
 					},
 				},
 				"required": []string{"path"},
@@ -124,16 +124,16 @@ func (lf *ListFile) Definition() map[string]any {
 		"type": "function",
 		"function": map[string]any{
 			"name":        lf.Name(),
-			"description": "List files and directories at a given path. If no path is provided, lists files in the current directory.",
+			"description": "List files and directories at a path in the workspace.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"path": map[string]any{
 						"type":        "string",
-						"description": "The relative path of a file in the working directory. If pattern is provided, this can be a directory path to search in.",
+						"description": "Relative path to a directory in the workspace. Omit or use \".\" for the workspace root.",
 					},
 				},
-				"required": []string{"path"},
+				"required": []string{},
 			},
 		},
 	}
