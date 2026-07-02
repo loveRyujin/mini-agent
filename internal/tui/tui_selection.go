@@ -198,7 +198,7 @@ func (m *model) mouseToContentPos(msg tea.MouseMsg) textPos {
 }
 
 func (m *model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.approvalReplyCh != nil {
+	if m.gate != nil && m.gate.IsPending() {
 		return m, nil
 	}
 

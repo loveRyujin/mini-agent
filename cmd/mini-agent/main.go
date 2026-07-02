@@ -38,5 +38,7 @@ func run() error {
 	}
 
 	a := agent.NewAgent(apiKey, url, model, systemPrompt)
-	return tui.Run(a)
+	gate := tui.NewApprovalGate()
+	a.ApprovalGate = gate
+	return tui.Run(a, gate)
 }

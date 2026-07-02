@@ -24,9 +24,8 @@ type Event struct {
 	ToolArguments    map[string]any
 	ToolContent      string
 	AssistantMessage string
-	Usage            inference.Usage
-	Err              error
-	ApprovalReplyCh  chan<- bool
+	Usage inference.Usage
+	Err   error
 }
 
 type EventEmitter func(Event)

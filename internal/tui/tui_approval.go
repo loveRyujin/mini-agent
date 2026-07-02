@@ -57,16 +57,15 @@ func overlayModal(modal string, width, height int) string {
 func (m *model) handleApprovalKeys(msg tea.KeyMsg) {
 	switch strings.ToLower(msg.String()) {
 	case "y":
-		m.approvalReplyCh <- true
+		m.gate.Respond(true)
 		m.clearApproval()
 	case "n":
-		m.approvalReplyCh <- false
+		m.gate.Respond(false)
 		m.clearApproval()
 	}
 }
 
 func (m *model) clearApproval() {
 	m.approvalCommand = ""
-	m.approvalReplyCh = nil
 	m.textarea.Focus()
 }

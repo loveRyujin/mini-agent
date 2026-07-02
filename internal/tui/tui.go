@@ -31,6 +31,7 @@ type turnDoneMsg struct{}
 
 type model struct {
 	agent      *agent.Agent
+	gate       *ApprovalGate
 	transcript *transcript.Transcript
 	viewport   viewport.Model
 	textarea   textarea.Model
@@ -43,7 +44,7 @@ type model struct {
 	workspace       string
 
 	approvalCommand string
-	approvalReplyCh chan<- bool
+	turnCancel      context.CancelFunc
 
 	width, height  int
 	turnInProgress bool
@@ -61,7 +62,7 @@ type model struct {
 	copyNotice        string
 }
 
-func newModel(a *agent.Agent) *model {
+func newModel(a *agent.Agent, gate *ApprovalGate) *model {
 	ta := textarea.New()
 	ta.Prompt = ""
 	ta.Placeholder = ""
@@ -85,6 +86,7 @@ func newModel(a *agent.Agent) *model {
 
 	return &model{
 		agent:      a,
+		gate:       gate,
 		transcript: transcript.New(),
 		textarea:   ta,
 		viewport:   vp,
@@ -121,7 +123,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.copyNotice = ""
 		if msg.event.Kind == agent.EventApprovalRequired {
 			m.approvalCommand = msg.event.Command
-			m.approvalReplyCh = msg.event.ApprovalReplyCh
 			m.textarea.Blur()
 		}
 		m.syncViewport()
@@ -130,11 +131,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case turnDoneMsg:
 		m.turnInProgress = false
 		m.eventCh = nil
+		m.turnCancel = nil
 		m.syncViewport()
 		return m, nil
 
 	case tea.KeyMsg:
-		if m.approvalReplyCh != nil {
+		if m.gate != nil && m.gate.IsPending() {
 			m.handleApprovalKeys(msg)
 			return m, nil
 		}
@@ -162,6 +164,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.syncViewport()
 				return m, nil
 			}
+			m.cancelTurn()
 			return m, tea.Quit
 		case tea.KeyCtrlO:
 			m.toggleExpandKind(transcript.EntryReasoning)
@@ -190,6 +193,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textarea.SetValue("")
 			switch result, arg := slash.Parse(text); result {
 			case slash.Quit:
+				m.cancelTurn()
 				return m, tea.Quit
 			case slash.Clear:
 				m.agent.ClearSession()
@@ -215,7 +219,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			default:
 				m.transcript.AddUserMessage(text)
 				m.syncViewport()
-				return m, startTurn(m.agent, text)
+				return m, m.startTurnCmd(text)
 			}
 		case tea.KeyPgUp, tea.KeyPgDown:
 			m.scrollViewport(msg)
@@ -239,7 +243,7 @@ func (m *model) View() string {
 		return lipgloss.NewStyle().Render("初始化...")
 	}
 	panel := renderPanel(m)
-	if m.approvalReplyCh != nil {
+	if m.approvalCommand != "" {
 		return overlayModal(renderApprovalModal(m), m.width, m.height)
 	}
 	return panel
@@ -252,7 +256,7 @@ func renderPanel(m *model) string {
 	footerStyle := lipgloss.NewStyle().Foreground(t.Dim).Padding(0, 1)
 
 	status := lipgloss.NewStyle().Foreground(t.User).Bold(true).Render("● 就绪")
-	if m.approvalReplyCh != nil {
+	if m.approvalCommand != "" {
 		status = lipgloss.NewStyle().Foreground(t.Gold).Bold(true).Render("● 等待批准")
 	} else if m.turnInProgress {
 		status = lipgloss.NewStyle().Foreground(t.Tool).Bold(true).Render("● 生成中")
@@ -272,7 +276,7 @@ func renderPanel(m *model) string {
 }
 
 func (m *model) footerText() string {
-	if m.approvalReplyCh != nil {
+	if m.approvalCommand != "" {
 		return "Y 允许执行  ·  N 拒绝"
 	}
 	if m.copyNotice != "" {
@@ -364,11 +368,20 @@ func (m *model) waitEvent() tea.Cmd {
 	}
 }
 
-func startTurn(a *agent.Agent, userText string) tea.Cmd {
+func (m *model) cancelTurn() {
+	if m.turnCancel != nil {
+		m.turnCancel()
+		m.turnCancel = nil
+	}
+}
+
+func (m *model) startTurnCmd(userText string) tea.Cmd {
+	ctx, cancel := context.WithCancel(context.Background())
+	m.turnCancel = cancel
 	ch := make(chan agent.Event)
 	go func() {
 		emit := func(e agent.Event) { ch <- e }
-		_ = a.RunTurn(context.Background(), userText, emit)
+		_ = m.agent.RunTurn(ctx, userText, emit)
 		close(ch)
 	}()
 	return func() tea.Msg {
@@ -376,8 +389,8 @@ func startTurn(a *agent.Agent, userText string) tea.Cmd {
 	}
 }
 
-func Run(a *agent.Agent) error {
-	p := tea.NewProgram(newModel(a), tea.WithAltScreen(), tea.WithMouseCellMotion())
+func Run(a *agent.Agent, gate *ApprovalGate) error {
+	p := tea.NewProgram(newModel(a, gate), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }

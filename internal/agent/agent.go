@@ -246,27 +246,13 @@ func (a *Agent) toolCall(ctx context.Context, toolCalls []inference.ToolCall, em
 }
 
 func (a *Agent) requestApproval(ctx context.Context, gt tools.GatedTool, toolCall inference.ToolCall, emit EventEmitter) (bool, error) {
+	if a.ApprovalGate == nil {
+		return false, errors.New("approval gate not configured")
+	}
 	req := ApprovalRequest{
 		ToolCallID: toolCall.ID,
 		ToolName:   toolCall.Function.Name,
 		Summary:    gt.ApprovalSummary(toolCall),
 	}
-
-	if a.ApprovalGate != nil {
-		return a.ApprovalGate.RequestApproval(ctx, req, emit)
-	}
-
-	ch := make(chan bool, 1)
-	emit(Event{
-		Kind:            EventApprovalRequired,
-		Command:         req.Summary,
-		ApprovalReplyCh: ch,
-	})
-
-	select {
-	case allowed := <-ch:
-		return allowed, nil
-	case <-ctx.Done():
-		return false, ctx.Err()
-	}
+	return a.ApprovalGate.RequestApproval(ctx, req, emit)
 }
