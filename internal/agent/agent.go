@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/loveRyujin/mini-agent/internal/inference"
-	"github.com/loveRyujin/mini-agent/internal/prompt"
 	"github.com/loveRyujin/mini-agent/internal/tools"
+	"github.com/loveRyujin/mini-agent/internal/workspace"
 )
 
 const maxToolRoundsPerTurn = 25
@@ -24,7 +24,7 @@ type Agent struct {
 	systemPrompt string
 }
 
-func NewAgent(apiKey, url, model, systemPrompt string) *Agent {
+func NewAgent(apiKey, url, model, systemPrompt string, ws *workspace.Workspace) *Agent {
 	agent := &Agent{
 		Backend: &inference.Client{
 			HTTPClient: inference.DefaultHTTPClient(),
@@ -36,7 +36,7 @@ func NewAgent(apiKey, url, model, systemPrompt string) *Agent {
 		Tools:        make(map[string]tools.Tool),
 		systemPrompt: systemPrompt,
 	}
-	for _, tool := range tools.Builtin() {
+	for _, tool := range tools.Builtin(ws) {
 		agent.RegisterTool(tool)
 	}
 	agent.initHistory(systemPrompt)
@@ -51,9 +51,6 @@ func (a *Agent) initHistory(systemPrompt string) {
 }
 
 func (a *Agent) ClearSession() {
-	if a.systemPrompt == "" {
-		a.systemPrompt = prompt.Default()
-	}
 	a.initHistory(a.systemPrompt)
 }
 

@@ -11,9 +11,12 @@ import (
 	"strings"
 
 	"github.com/loveRyujin/mini-agent/internal/inference"
+	"github.com/loveRyujin/mini-agent/internal/workspace"
 )
 
-type ReadFile struct{}
+type ReadFile struct {
+	WS *workspace.Workspace
+}
 
 func (rf *ReadFile) Name() string { return "read_file" }
 
@@ -54,7 +57,7 @@ func (rf *ReadFile) Call(ctx context.Context, args inference.ToolCall) map[strin
 	if err != nil {
 		return failResp(args.ID, err)
 	}
-	resolved, err := ResolveWorkspacePath(path)
+	resolved, err := rf.WS.Resolve(path)
 	if err != nil {
 		return failResp(args.ID, err)
 	}
@@ -65,7 +68,9 @@ func (rf *ReadFile) Call(ctx context.Context, args inference.ToolCall) map[strin
 	return successResp(args.ID, "file_content", string(content))
 }
 
-type WriteFile struct{}
+type WriteFile struct {
+	WS *workspace.Workspace
+}
 
 func (wf *WriteFile) Name() string { return "write_file" }
 
@@ -102,7 +107,7 @@ func (wf *WriteFile) Call(ctx context.Context, args inference.ToolCall) map[stri
 	if !ok {
 		return failResp(args.ID, errors.New("content must be a string"))
 	}
-	resolved, err := ResolveWorkspacePath(path)
+	resolved, err := wf.WS.Resolve(path)
 	if err != nil {
 		return failResp(args.ID, err)
 	}
@@ -115,7 +120,9 @@ func (wf *WriteFile) Call(ctx context.Context, args inference.ToolCall) map[stri
 	return successResp(args.ID, "path", path)
 }
 
-type ListFile struct{}
+type ListFile struct {
+	WS *workspace.Workspace
+}
 
 func (lf *ListFile) Name() string { return "list_file" }
 
@@ -144,7 +151,7 @@ func (lf *ListFile) Call(ctx context.Context, args inference.ToolCall) map[strin
 	if err != nil {
 		return failResp(args.ID, err)
 	}
-	resolved, err := ResolveWorkspacePath(dir)
+	resolved, err := lf.WS.Resolve(dir)
 	if err != nil {
 		return failResp(args.ID, err)
 	}
@@ -176,7 +183,9 @@ func (lf *ListFile) Call(ctx context.Context, args inference.ToolCall) map[strin
 	return successResp(args.ID, "files", string(result))
 }
 
-type WorkspaceSearch struct{}
+type WorkspaceSearch struct {
+	WS *workspace.Workspace
+}
 
 func (ws *WorkspaceSearch) Name() string { return "workspace_search" }
 
@@ -228,7 +237,7 @@ func (ws *WorkspaceSearch) Call(ctx context.Context, args inference.ToolCall) ma
 	if m, ok := args.Function.Arguments["mode"].(string); ok && m != "" {
 		mode = m
 	}
-	resolved, err := ResolveWorkspacePath(searchPath)
+	resolved, err := ws.WS.Resolve(searchPath)
 	if err != nil {
 		return failResp(args.ID, err)
 	}

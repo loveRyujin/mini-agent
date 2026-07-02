@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/loveRyujin/mini-agent/internal/inference"
+	"github.com/loveRyujin/mini-agent/internal/workspace"
 )
 
 type Tool interface {
@@ -18,12 +19,12 @@ type GatedTool interface {
 }
 
 // Builtin returns all Built-in Tools shipped with the application.
-func Builtin() []Tool {
+func Builtin(ws *workspace.Workspace) []Tool {
 	return []Tool{
-		&ReadFile{},
-		&ListFile{},
-		&WriteFile{},
-		&WorkspaceSearch{},
-		&RunShell{},
+		&ReadFile{WS: ws},
+		&ListFile{WS: ws},
+		&WriteFile{WS: ws},
+		&WorkspaceSearch{WS: ws},
+		&RunShell{WS: ws},
 	}
 }

@@ -10,7 +10,7 @@ import (
 
 func TestSyncViewport_preservesScrollWhenNotFollowingTail(t *testing.T) {
 	a := &agent.Agent{Model: "test-model", Tools: make(map[string]tools.Tool)}
-	m := newModel(a, NewApprovalGate())
+	m := newModel(a, NewApprovalGate(), "/tmp/test")
 	m.ready = true
 	m.width = 80
 	m.height = 24

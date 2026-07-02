@@ -5,14 +5,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/loveRyujin/mini-agent/internal/tools"
+	"github.com/loveRyujin/mini-agent/internal/workspace"
 )
 
 func TestDefaultSystemPrompt_includesWorkspace(t *testing.T) {
 	dir := t.TempDir()
-	tools.SetWorkspaceRootForTest(dir)
+	ws, err := workspace.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	p := Default()
+	p := Default(ws)
 	if !strings.Contains(p, dir) {
 		t.Fatalf("prompt should include workspace root %q, got:\n%s", dir, p)
 	}
@@ -26,13 +29,16 @@ func TestDefaultSystemPrompt_includesWorkspace(t *testing.T) {
 func TestResolveSystemPrompt_default(t *testing.T) {
 	t.Setenv(EnvSystemPrompt, "")
 	t.Setenv(EnvSystemPromptFile, "")
-	tools.SetWorkspaceRootForTest(t.TempDir())
-
-	p, err := Resolve()
+	ws, err := workspace.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p != Default() {
+
+	p, err := Resolve(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p != Default(ws) {
 		t.Fatalf("got custom prompt, want default:\n%s", p)
 	}
 }
@@ -41,7 +47,12 @@ func TestResolveSystemPrompt_fromEnv(t *testing.T) {
 	t.Setenv(EnvSystemPrompt, "  custom agent instructions  ")
 	t.Setenv(EnvSystemPromptFile, "")
 
-	p, err := Resolve()
+	ws, err := workspace.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := Resolve(ws)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +70,12 @@ func TestResolveSystemPrompt_fromFile(t *testing.T) {
 	}
 	t.Setenv(EnvSystemPromptFile, path)
 
-	p, err := Resolve()
+	ws, err := workspace.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := Resolve(ws)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +88,12 @@ func TestResolveSystemPrompt_missingFile(t *testing.T) {
 	t.Setenv(EnvSystemPrompt, "")
 	t.Setenv(EnvSystemPromptFile, "/no/such/prompt.txt")
 
-	_, err := Resolve()
+	ws, err := workspace.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Resolve(ws)
 	if err == nil {
 		t.Fatal("expected error for missing prompt file")
 	}

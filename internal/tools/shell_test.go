@@ -12,9 +12,9 @@ import (
 
 func TestRunShell_executesInWorkspace(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
-	rs := &RunShell{}
+	rs := &RunShell{WS: ws}
 	resp := rs.Call(context.Background(), inference.ToolCall{
 		ID: "call-1",
 		Function: inference.Function{
@@ -34,9 +34,9 @@ func TestRunShell_executesInWorkspace(t *testing.T) {
 
 func TestRunShell_rejectsMissingCommand(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
-	rs := &RunShell{}
+	rs := &RunShell{WS: ws}
 	resp := rs.Call(context.Background(), inference.ToolCall{
 		ID: "call-1",
 		Function: inference.Function{
@@ -53,14 +53,14 @@ func TestRunShell_rejectsMissingCommand(t *testing.T) {
 
 func TestRunShell_runsInWorkspaceDir(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
 	sub := filepath.Join(dir, "sub")
 	if err := os.Mkdir(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	rs := &RunShell{}
+	rs := &RunShell{WS: ws}
 	resp := rs.Call(context.Background(), inference.ToolCall{
 		ID: "call-1",
 		Function: inference.Function{

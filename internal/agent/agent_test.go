@@ -12,6 +12,7 @@ import (
 
 	"github.com/loveRyujin/mini-agent/internal/inference"
 	"github.com/loveRyujin/mini-agent/internal/tools"
+	"github.com/loveRyujin/mini-agent/internal/workspace"
 )
 
 
@@ -42,17 +43,13 @@ func (s *scriptedBackend) CallLLMStream(_ context.Context, _ map[string]any) (in
 }
 
 
-func chdirWorkspace(t *testing.T, dir string) {
+func testWorkspace(t *testing.T, dir string) *workspace.Workspace {
 	t.Helper()
-	origWd, err := os.Getwd()
+	ws, err := workspace.New(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chdir(origWd) })
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	tools.SetWorkspaceRootForTest(dir)
+	return ws
 }
 
 func collectEmitter() (EventEmitter, func() []Event) {
@@ -111,16 +108,7 @@ func TestRunTurn_toolLoop(t *testing.T) {
 	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-
-	origWd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(origWd) })
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	tools.SetWorkspaceRootForTest(dir)
+	ws := testWorkspace(t, dir)
 
 	backend := &scriptedBackend{
 		scripts: [][]inference.Response{
@@ -147,7 +135,7 @@ func TestRunTurn_toolLoop(t *testing.T) {
 		Model:   "test-model",
 		Tools:   make(map[string]tools.Tool),
 	}
-	agent.RegisterTool(&tools.ReadFile{})
+	agent.RegisterTool(&tools.ReadFile{WS: ws})
 	agent.initHistory("system prompt")
 
 	emit, events := collectEmitter()
@@ -178,16 +166,7 @@ func TestRunTurn_multiToolLoop(t *testing.T) {
 	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-
-	origWd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(origWd) })
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	tools.SetWorkspaceRootForTest(dir)
+	ws := testWorkspace(t, dir)
 
 	backend := &scriptedBackend{
 		scripts: [][]inference.Response{
@@ -226,7 +205,7 @@ func TestRunTurn_multiToolLoop(t *testing.T) {
 		Model:   "test-model",
 		Tools:   make(map[string]tools.Tool),
 	}
-	agent.RegisterTool(&tools.ReadFile{}, &tools.ListFile{})
+	agent.RegisterTool(&tools.ReadFile{WS: ws}, &tools.ListFile{WS: ws})
 	agent.initHistory("system prompt")
 
 	emit, events := collectEmitter()
@@ -255,15 +234,7 @@ func TestRunTurn_multiToolLoop(t *testing.T) {
 
 func TestRunTurn_toolPathEscape(t *testing.T) {
 	dir := t.TempDir()
-	origWd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(origWd) })
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	tools.SetWorkspaceRootForTest(dir)
+	ws := testWorkspace(t, dir)
 
 	backend := &scriptedBackend{
 		scripts: [][]inference.Response{
@@ -290,7 +261,7 @@ func TestRunTurn_toolPathEscape(t *testing.T) {
 		Model:   "test-model",
 		Tools:   make(map[string]tools.Tool),
 	}
-	agent.RegisterTool(&tools.ReadFile{})
+	agent.RegisterTool(&tools.ReadFile{WS: ws})
 	agent.initHistory("system prompt")
 
 	emit, events := collectEmitter()
@@ -315,7 +286,7 @@ func TestRunTurn_toolPathEscape(t *testing.T) {
 
 func TestRunTurn_shellAllowed(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
 	backend := &scriptedBackend{
 		scripts: [][]inference.Response{
@@ -343,7 +314,7 @@ func TestRunTurn_shellAllowed(t *testing.T) {
 		Tools:        make(map[string]tools.Tool),
 		ApprovalGate: NewStaticApprovalGate(true),
 	}
-	agent.RegisterTool(&tools.RunShell{})
+	agent.RegisterTool(&tools.RunShell{WS: ws})
 	agent.initHistory("system prompt")
 
 	emit, events := collectEmitter()
@@ -375,7 +346,7 @@ func TestRunTurn_shellAllowed(t *testing.T) {
 
 func TestRunTurn_shellDenied(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
 	backend := &scriptedBackend{
 		scripts: [][]inference.Response{
@@ -403,7 +374,7 @@ func TestRunTurn_shellDenied(t *testing.T) {
 		Tools:        make(map[string]tools.Tool),
 		ApprovalGate: NewStaticApprovalGate(false),
 	}
-	agent.RegisterTool(&tools.RunShell{})
+	agent.RegisterTool(&tools.RunShell{WS: ws})
 	agent.initHistory("system prompt")
 
 	emit, events := collectEmitter()
@@ -438,7 +409,7 @@ func TestRunTurn_shellDenied(t *testing.T) {
 
 func TestRunTurn_toolLoopLimit(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
 	scripts := make([][]inference.Response, maxToolRoundsPerTurn+1)
 	for i := range scripts {
@@ -463,7 +434,7 @@ func TestRunTurn_toolLoopLimit(t *testing.T) {
 		Model:   "test-model",
 		Tools:   make(map[string]tools.Tool),
 	}
-	agent.RegisterTool(&tools.ListFile{})
+	agent.RegisterTool(&tools.ListFile{WS: ws})
 	agent.initHistory("system prompt")
 
 	emit, events := collectEmitter()
@@ -488,7 +459,7 @@ func TestRunTurn_toolLoopLimit(t *testing.T) {
 
 func TestRunTurn_streamingToolCallDeduplicated(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
 	backend := &scriptedBackend{
 		scripts: [][]inference.Response{
@@ -525,7 +496,7 @@ func TestRunTurn_streamingToolCallDeduplicated(t *testing.T) {
 		Model:   "test-model",
 		Tools:   make(map[string]tools.Tool),
 	}
-	agent.RegisterTool(&tools.ListFile{})
+	agent.RegisterTool(&tools.ListFile{WS: ws})
 	agent.initHistory("system prompt")
 
 	emit, events := collectEmitter()
@@ -546,7 +517,7 @@ func TestRunTurn_streamingToolCallDeduplicated(t *testing.T) {
 
 func TestRunTurn_toolHistoryIncludesAssistantToolCalls(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
 	backend := &scriptedBackend{
 		scripts: [][]inference.Response{
@@ -574,7 +545,7 @@ func TestRunTurn_toolHistoryIncludesAssistantToolCalls(t *testing.T) {
 		Model:   "test-model",
 		Tools:   make(map[string]tools.Tool),
 	}
-	agent.RegisterTool(&tools.ListFile{})
+	agent.RegisterTool(&tools.ListFile{WS: ws})
 	agent.initHistory("system prompt")
 
 	emit, _ := collectEmitter()
@@ -649,7 +620,7 @@ func TestRunTurn_unknownToolStillRecordsResult(t *testing.T) {
 
 func TestRunTurn_duplicateToolCallsStop(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
 	alwaysTool := []inference.Response{
 		{Choices: []inference.Choice{{Delta: inference.Delta{
@@ -673,7 +644,7 @@ func TestRunTurn_duplicateToolCallsStop(t *testing.T) {
 		Model:   "test-model",
 		Tools:   make(map[string]tools.Tool),
 	}
-	agent.RegisterTool(&tools.ListFile{})
+	agent.RegisterTool(&tools.ListFile{WS: ws})
 	agent.initHistory("system prompt")
 
 	emit, _ := collectEmitter()
@@ -688,7 +659,7 @@ func TestRunTurn_duplicateToolCallsStop(t *testing.T) {
 
 func TestRunTurn_reasoningAndToolCallsSameDelta(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
 	backend := &scriptedBackend{
 		scripts: [][]inference.Response{
@@ -717,7 +688,7 @@ func TestRunTurn_reasoningAndToolCallsSameDelta(t *testing.T) {
 		Model:   "test-model",
 		Tools:   make(map[string]tools.Tool),
 	}
-	agent.RegisterTool(&tools.ListFile{})
+	agent.RegisterTool(&tools.ListFile{WS: ws})
 	agent.initHistory("system prompt")
 
 	emit, events := collectEmitter()
@@ -748,7 +719,11 @@ func eventKinds(events []Event) []EventKind {
 }
 
 func TestNewAgent_builtinTools(t *testing.T) {
-	agent := NewAgent("", "", "test", "system")
+	ws, err := workspace.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := NewAgent("", "", "test", "system", ws)
 
 	want := []string{"read_file", "list_file", "write_file", "workspace_search", "run_shell"}
 	for _, name := range want {

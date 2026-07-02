@@ -8,31 +8,28 @@ import (
 	"testing"
 
 	"github.com/loveRyujin/mini-agent/internal/inference"
+	"github.com/loveRyujin/mini-agent/internal/workspace"
 )
 
-func chdirWorkspace(t *testing.T, dir string) {
+func testWorkspace(t *testing.T, dir string) *workspace.Workspace {
 	t.Helper()
-	origWd, err := os.Getwd()
+	ws, err := workspace.New(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chdir(origWd) })
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	SetWorkspaceRootForTest(dir)
+	return ws
 }
 
 func TestReadFile_withinWorkspace(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
 	path := filepath.Join(dir, "hello.txt")
 	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	rf := &ReadFile{}
+	rf := &ReadFile{WS: ws}
 	resp := rf.Call(context.Background(), inference.ToolCall{
 		ID: "call-1",
 		Function: inference.Function{
@@ -49,9 +46,9 @@ func TestReadFile_withinWorkspace(t *testing.T) {
 
 func TestReadFile_rejectsEscape(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
-	rf := &ReadFile{}
+	rf := &ReadFile{WS: ws}
 	resp := rf.Call(context.Background(), inference.ToolCall{
 		ID: "call-1",
 		Function: inference.Function{
@@ -71,9 +68,9 @@ func TestReadFile_rejectsEscape(t *testing.T) {
 
 func TestListFile_rejectsEscape(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
-	lf := &ListFile{}
+	lf := &ListFile{WS: ws}
 	resp := lf.Call(context.Background(), inference.ToolCall{
 		ID: "call-1",
 		Function: inference.Function{
@@ -90,9 +87,9 @@ func TestListFile_rejectsEscape(t *testing.T) {
 
 func TestWriteFile_createsFile(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
-	wf := &WriteFile{}
+	wf := &WriteFile{WS: ws}
 	resp := wf.Call(context.Background(), inference.ToolCall{
 		ID: "call-1",
 		Function: inference.Function{
@@ -120,14 +117,14 @@ func TestWriteFile_createsFile(t *testing.T) {
 
 func TestWriteFile_overwritesExisting(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
 	path := filepath.Join(dir, "out.txt")
 	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	wf := &WriteFile{}
+	wf := &WriteFile{WS: ws}
 	resp := wf.Call(context.Background(), inference.ToolCall{
 		ID: "call-1",
 		Function: inference.Function{
@@ -155,9 +152,9 @@ func TestWriteFile_overwritesExisting(t *testing.T) {
 
 func TestWriteFile_rejectsEscape(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
-	wf := &WriteFile{}
+	wf := &WriteFile{WS: ws}
 	resp := wf.Call(context.Background(), inference.ToolCall{
 		ID: "call-1",
 		Function: inference.Function{
@@ -177,14 +174,14 @@ func TestWriteFile_rejectsEscape(t *testing.T) {
 
 func TestWorkspaceSearch_contentMatch(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
 	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\nfunc foo() {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	ws := &WorkspaceSearch{}
-	resp := ws.Call(context.Background(), inference.ToolCall{
+	search := &WorkspaceSearch{WS: ws}
+	resp := search.Call(context.Background(), inference.ToolCall{
 		ID: "call-1",
 		Function: inference.Function{
 			Name: "workspace_search",
@@ -206,7 +203,7 @@ func TestWorkspaceSearch_contentMatch(t *testing.T) {
 
 func TestWorkspaceSearch_filenameMatch(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
 	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0o644); err != nil {
 		t.Fatal(err)
@@ -215,8 +212,8 @@ func TestWorkspaceSearch_filenameMatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ws := &WorkspaceSearch{}
-	resp := ws.Call(context.Background(), inference.ToolCall{
+	search := &WorkspaceSearch{WS: ws}
+	resp := search.Call(context.Background(), inference.ToolCall{
 		ID: "call-1",
 		Function: inference.Function{
 			Name: "workspace_search",
@@ -242,10 +239,10 @@ func TestWorkspaceSearch_filenameMatch(t *testing.T) {
 
 func TestWorkspaceSearch_rejectsEscape(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
-	ws := &WorkspaceSearch{}
-	resp := ws.Call(context.Background(), inference.ToolCall{
+	search := &WorkspaceSearch{WS: ws}
+	resp := search.Call(context.Background(), inference.ToolCall{
 		ID: "call-1",
 		Function: inference.Function{
 			Name: "workspace_search",
@@ -264,7 +261,7 @@ func TestWorkspaceSearch_rejectsEscape(t *testing.T) {
 
 func TestListFile_withinWorkspace(t *testing.T) {
 	dir := t.TempDir()
-	chdirWorkspace(t, dir)
+	ws := testWorkspace(t, dir)
 
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644); err != nil {
 		t.Fatal(err)
@@ -273,7 +270,7 @@ func TestListFile_withinWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	lf := &ListFile{}
+	lf := &ListFile{WS: ws}
 	resp := lf.Call(context.Background(), inference.ToolCall{
 		ID: "call-1",
 		Function: inference.Function{

@@ -7,8 +7,8 @@ import (
 
 	"github.com/loveRyujin/mini-agent/internal/agent"
 	"github.com/loveRyujin/mini-agent/internal/prompt"
-	"github.com/loveRyujin/mini-agent/internal/tools"
 	"github.com/loveRyujin/mini-agent/internal/tui"
+	"github.com/loveRyujin/mini-agent/internal/workspace"
 )
 
 const (
@@ -24,7 +24,8 @@ func main() {
 }
 
 func run() error {
-	if err := tools.InitWorkspace(); err != nil {
+	ws, err := workspace.NewFromCWD()
+	if err != nil {
 		return fmt.Errorf("init workspace: %w", err)
 	}
 
@@ -32,13 +33,13 @@ func run() error {
 	url := cmp.Or(os.Getenv("LLM_API_URL"), defaultURL)
 	model := cmp.Or(os.Getenv("LLM_MODEL"), defaultModel)
 
-	systemPrompt, err := prompt.Resolve()
+	systemPrompt, err := prompt.Resolve(ws)
 	if err != nil {
 		return fmt.Errorf("system prompt: %w", err)
 	}
 
-	a := agent.NewAgent(apiKey, url, model, systemPrompt)
+	a := agent.NewAgent(apiKey, url, model, systemPrompt, ws)
 	gate := tui.NewApprovalGate()
 	a.ApprovalGate = gate
-	return tui.Run(a, gate)
+	return tui.Run(a, gate, ws.Display())
 }

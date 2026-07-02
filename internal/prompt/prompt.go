@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/loveRyujin/mini-agent/internal/tools"
+	"github.com/loveRyujin/mini-agent/internal/workspace"
 )
 
 const (
@@ -13,7 +13,7 @@ const (
 	EnvSystemPromptFile = "MINI_AGENT_SYSTEM_PROMPT_FILE"
 )
 
-func Resolve() (string, error) {
+func Resolve(ws *workspace.Workspace) (string, error) {
 	if path := os.Getenv(EnvSystemPromptFile); path != "" {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -24,12 +24,12 @@ func Resolve() (string, error) {
 	if p := os.Getenv(EnvSystemPrompt); p != "" {
 		return strings.TrimSpace(p), nil
 	}
-	return Default(), nil
+	return Default(ws), nil
 }
 
-func Default() string {
-	root := tools.WorkspaceRoot()
-	display := tools.WorkspaceDisplay()
+func Default(ws *workspace.Workspace) string {
+	root := ws.Root()
+	display := ws.Display()
 	return fmt.Sprintf(`You are a coding agent running in the user's terminal.
 
 Your workspace root is %s (display: %s). All tool paths must be relative to this directory. Use list_file with path "." to explore the workspace. You cannot access files outside the workspace.

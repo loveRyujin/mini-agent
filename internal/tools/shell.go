@@ -8,11 +8,14 @@ import (
 	"strings"
 
 	"github.com/loveRyujin/mini-agent/internal/inference"
+	"github.com/loveRyujin/mini-agent/internal/workspace"
 )
 
 var ErrShellDenied = errors.New("shell execution denied by user")
 
-type RunShell struct{}
+type RunShell struct {
+	WS *workspace.Workspace
+}
 
 func (rs *RunShell) Name() string { return "run_shell" }
 
@@ -46,16 +49,16 @@ func (rs *RunShell) Call(ctx context.Context, args inference.ToolCall) map[strin
 	if !ok || strings.TrimSpace(command) == "" {
 		return failResp(args.ID, errors.New("command is required"))
 	}
-	stdout, stderr, exitCode, err := executeShell(ctx, command)
+	stdout, stderr, exitCode, err := executeShell(ctx, rs.WS, command)
 	if err != nil {
 		return failResp(args.ID, err)
 	}
 	return successResp(args.ID, "stdout", stdout, "stderr", stderr, "exit_code", exitCode)
 }
 
-func executeShell(ctx context.Context, command string) (stdout, stderr string, exitCode int, err error) {
+func executeShell(ctx context.Context, ws *workspace.Workspace, command string) (stdout, stderr string, exitCode int, err error) {
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
-	cmd.Dir = WorkspaceRoot()
+	cmd.Dir = ws.Root()
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf

@@ -11,7 +11,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/loveRyujin/mini-agent/internal/agent"
 	"github.com/loveRyujin/mini-agent/internal/slash"
-	"github.com/loveRyujin/mini-agent/internal/tools"
 	"github.com/loveRyujin/mini-agent/internal/transcript"
 )
 
@@ -62,7 +61,7 @@ type model struct {
 	copyNotice        string
 }
 
-func newModel(a *agent.Agent, gate *ApprovalGate) *model {
+func newModel(a *agent.Agent, gate *ApprovalGate, workspaceDisplay string) *model {
 	ta := textarea.New()
 	ta.Prompt = ""
 	ta.Placeholder = ""
@@ -93,7 +92,7 @@ func newModel(a *agent.Agent, gate *ApprovalGate) *model {
 		expanded:   make(map[int]bool),
 		focusIdx:   -1,
 		theme:      transcript.DefaultTheme,
-		workspace:  tools.WorkspaceDisplay(),
+		workspace:  workspaceDisplay,
 		followTail: true,
 		selStart:   textPos{line: -1, col: -1},
 		selEnd:     textPos{line: -1, col: -1},
@@ -389,8 +388,8 @@ func (m *model) startTurnCmd(userText string) tea.Cmd {
 	}
 }
 
-func Run(a *agent.Agent, gate *ApprovalGate) error {
-	p := tea.NewProgram(newModel(a, gate), tea.WithAltScreen(), tea.WithMouseCellMotion())
+func Run(a *agent.Agent, gate *ApprovalGate, workspaceDisplay string) error {
+	p := tea.NewProgram(newModel(a, gate, workspaceDisplay), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }
