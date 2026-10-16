@@ -64,6 +64,7 @@ go run ./cmd/mini-agent
 
 ## 文档
 
+- Week 1 学习笔记（五种工作流对照）：[`NOTES.md`](NOTES.md)
 - 领域术语：[`CONTEXT.md`](CONTEXT.md)
 - 架构决策：[`docs/adr/`](docs/adr/)
 - Agent 工作流：[`docs/agents/`](docs/agents/)
